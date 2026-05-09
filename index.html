@@ -490,7 +490,7 @@ html, body {
   <div id="screen-home" class="screen active">
     <div class="home-header">
       <div class="home-logo">📒 Accounts Manager</div>
-      <div class="home-tagline">Interactive Accounting at fingertips</div>
+      <div class="home-tagline">TANMAY TROPHY MFG. CO.</div>
       <div class="home-gapi-status">
         <div class="status-dot" id="drive-status-dot"></div>
         <span id="drive-status-text">Google Drive: Not connected</span>
@@ -802,27 +802,33 @@ let reportRows     = [];
 // ── GOOGLE DRIVE API ────────────────────────────────
 function initGapi() {
   gapi.load('client', async () => {
-    await gapi.client.init({ apiKey: API_KEY, discoveryDocs: [
-      'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest',
-      'https://sheets.googleapis.com/$discovery/rest?version=v4'
-    ] });
+    try {
+      // Minimal init — no discovery docs needed since all API calls use fetch() directly
+      await gapi.client.init({ apiKey: API_KEY });
+    } catch(e) {
+      console.warn('gapi init warning (non-fatal):', e);
+    }
+
+    // Set up OAuth — this runs regardless of discovery doc status
     tokenClient = google.accounts.oauth2.initTokenClient({
       client_id: CLIENT_ID,
       scope: SCOPES,
       callback: (resp) => {
         if (resp.error) { showToast('Drive auth failed: ' + resp.error, 'error'); return; }
         accessToken = resp.access_token;
+        gapi.client.setToken({ access_token: accessToken });
         driveConnected = true;
         updateDriveStatus(true);
         document.getElementById('drive-connect-section').style.display = 'none';
         showToast('Google Drive connected ✓', 'success');
-        // Load company master from sheet
         loadCompanyMasterFromSheet();
       }
     });
-    // Auto-prompt if token exists
-    if (gapi.client.getToken()) {
-      accessToken = gapi.client.getToken().access_token;
+
+    // Restore session if already authed
+    const existing = gapi.client.getToken();
+    if (existing) {
+      accessToken = existing.access_token;
       driveConnected = true;
       updateDriveStatus(true);
     }
@@ -846,31 +852,37 @@ function updateDriveStatus(connected) {
 
 let companyMasterFileId = null;
 
+async function driveAPI(method, path, body = null) {
+  // Helper: raw fetch to Drive API v3 with access token
+  const url = `https://www.googleapis.com/drive/v3/${path}`;
+  const opts = { method, headers: { Authorization: `Bearer ${accessToken}` } };
+  if (body) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
+  const r = await fetch(url, opts);
+  return r.json();
+}
+
 async function findCompanyMasterSheet() {
   try {
-    // Find "Manage Accounts" folder
-    const folderQ = `name='Manage Accounts' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
-    const folderResp = await gapi.client.drive.files.list({ q: folderQ, fields: 'files(id)' });
-    let folderId = folderResp.result.files?.[0]?.id;
+    // Find or create "Manage Accounts" folder
+    const folderSearch = await driveAPI('GET', `files?q=${encodeURIComponent("name='Manage Accounts' and mimeType='application/vnd.google-apps.folder' and trashed=false")}&fields=files(id)`);
+    let folderId = folderSearch.files?.[0]?.id;
     if (!folderId) {
-      // Create it
-      const newF = await gapi.client.drive.files.create({ resource: { name: 'Manage Accounts', mimeType: 'application/vnd.google-apps.folder' }, fields: 'id' });
-      folderId = newF.result.id;
+      const newF = await driveAPI('POST', 'files', { name: 'Manage Accounts', mimeType: 'application/vnd.google-apps.folder' });
+      folderId = newF.id;
     }
-    // Find "Company Master" sheet inside it
-    const sheetQ = `name='Company Master' and '${folderId}' in parents and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`;
-    const sheetResp = await gapi.client.drive.files.list({ q: sheetQ, fields: 'files(id)' });
-    if (sheetResp.result.files?.length > 0) {
-      companyMasterFileId = sheetResp.result.files[0].id;
+    // Find or create "Company Master" Google Sheet inside it
+    const sheetSearch = await driveAPI('GET', `files?q=${encodeURIComponent(`name='Company Master' and '${folderId}' in parents and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`)}&fields=files(id)`);
+    if (sheetSearch.files?.length > 0) {
+      companyMasterFileId = sheetSearch.files[0].id;
       return companyMasterFileId;
     }
-    // Create the sheet with initial data from current CONFIG
-    const createResp = await gapi.client.drive.files.create({
-      resource: { name: 'Company Master', mimeType: 'application/vnd.google-apps.spreadsheet', parents: [folderId] },
-      fields: 'id'
+    // Create it
+    const newSheet = await driveAPI('POST', 'files', {
+      name: 'Company Master',
+      mimeType: 'application/vnd.google-apps.spreadsheet',
+      parents: [folderId]
     });
-    companyMasterFileId = createResp.result.id;
-    // Push current config into it
+    companyMasterFileId = newSheet.id;
     await syncCompanyMasterToSheet();
     return companyMasterFileId;
   } catch(e) {
@@ -885,23 +897,26 @@ async function loadCompanyMasterFromSheet() {
     const fileId = await findCompanyMasterSheet();
     if (!fileId) { showLoader(false); return; }
 
-    // Get all sheet tabs (companies)
-    const metaResp = await gapi.client.request({
-      path: `https://sheets.googleapis.com/v4/spreadsheets/${fileId}`,
-      params: { fields: 'sheets.properties' }
-    });
-    const sheets = metaResp.result.sheets || [];
+    // Get all sheet tabs using fetch directly (avoids gapi discovery issues)
+    const metaResp = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${fileId}?fields=sheets.properties`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    const meta = await metaResp.json();
+    const sheets = meta.sheets || [];
     if (!sheets.length) { showLoader(false); return; }
 
     const newCompanies = [];
     for (const sheet of sheets) {
       const companyName = sheet.properties.title;
-      if (companyName === 'Sheet1') continue; // skip default empty tab
+      if (companyName === 'Sheet1') continue;
       // Read column A for party names
-      const dataResp = await gapi.client.request({
-        path: `https://sheets.googleapis.com/v4/spreadsheets/${fileId}/values/${encodeURIComponent(companyName + '!A:A')}`
-      });
-      const vals = dataResp.result.values || [];
+      const dataResp = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${fileId}/values/${encodeURIComponent(companyName + '!A:A')}`,
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      );
+      const data = await dataResp.json();
+      const vals = data.values || [];
       const parties = vals.flat().map(v => String(v).trim().toUpperCase()).filter(v => v && v !== companyName.toUpperCase());
       const id = companyName.toLowerCase().replace(/\s+/g, '_');
       const short = companyName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
@@ -915,7 +930,6 @@ async function loadCompanyMasterFromSheet() {
       showLoader(false);
       showToast(`Loaded ${newCompanies.length} companies from Company Master ✓`, 'success');
     } else {
-      // Sheet exists but empty — push our local config into it
       showLoader(false);
       await syncCompanyMasterToSheet();
     }
@@ -931,21 +945,20 @@ async function syncCompanyMasterToSheet() {
     const fileId = companyMasterFileId || await findCompanyMasterSheet();
     if (!fileId) return;
 
-    // Get existing sheet tabs
-    const metaResp = await gapi.client.request({
-      path: `https://sheets.googleapis.com/v4/spreadsheets/${fileId}`,
-      params: { fields: 'sheets.properties' }
-    });
-    const existingSheets = (metaResp.result.sheets || []).map(s => ({ title: s.properties.title, id: s.properties.sheetId }));
+    // Get existing sheet tabs via fetch
+    const metaResp = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${fileId}?fields=sheets.properties`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    const meta = await metaResp.json();
+    const existingSheets = (meta.sheets || []).map(s => ({ title: s.properties.title, id: s.properties.sheetId }));
 
     const requests = [];
-    // Add missing company tabs
     for (const co of CONFIG.companies) {
       if (!existingSheets.find(s => s.title.toUpperCase() === co.name)) {
         requests.push({ addSheet: { properties: { title: co.name } } });
       }
     }
-    // Delete removed company tabs (not Sheet1)
     for (const ex of existingSheets) {
       if (ex.title === 'Sheet1') continue;
       if (!CONFIG.companies.find(c => c.name === ex.title.toUpperCase())) {
@@ -954,23 +967,23 @@ async function syncCompanyMasterToSheet() {
     }
 
     if (requests.length > 0) {
-      await gapi.client.request({
-        path: `https://sheets.googleapis.com/v4/spreadsheets/${fileId}:batchUpdate`,
+      await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${fileId}:batchUpdate`, {
         method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ requests })
       });
     }
 
-    // Write party names into each company tab
-    const valueData = [];
-    for (const co of CONFIG.companies) {
-      const values = co.parties.map(p => [p]);
-      valueData.push({ range: `${co.name}!A1`, values });
-    }
+    // Write party names into each tab
+    const valueData = CONFIG.companies.map(co => ({
+      range: `${co.name}!A1`,
+      values: co.parties.map(p => [p])
+    })).filter(d => d.values.length > 0);
+
     if (valueData.length > 0) {
-      await gapi.client.request({
-        path: `https://sheets.googleapis.com/v4/spreadsheets/${fileId}/values:batchUpdate`,
+      await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${fileId}/values:batchUpdate`, {
         method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ valueInputOption: 'RAW', data: valueData })
       });
     }
@@ -981,22 +994,15 @@ async function syncCompanyMasterToSheet() {
 
 // ── DRIVE FILE OPERATIONS ───────────────────────────
 
-async function downloadFile(fileId) {
-  const resp = await gapi.client.drive.files.get({ fileId, alt: 'media' });
-  return resp.body; // raw binary string
-}
-
   async function getOrCreateFolder(name, parentId = null) {
     let q = `name='${name}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
     if (parentId) q += ` and '${parentId}' in parents`;
-    
-    const resp = await gapi.client.drive.files.list({ q });
-    if (resp.result.files.length > 0) return resp.result.files[0].id;
-    
-    const folderMetadata = { 'name': name, 'mimeType': 'application/vnd.google-apps.folder' };
-    if (parentId) folderMetadata.parents = [parentId];
-    const newFolder = await gapi.client.drive.files.create({ resource: folderMetadata, fields: 'id' });
-    return newFolder.result.id;
+    const resp = await driveAPI('GET', `files?q=${encodeURIComponent(q)}&fields=files(id)`);
+    if (resp.files?.length > 0) return resp.files[0].id;
+    const body = { name, mimeType: 'application/vnd.google-apps.folder' };
+    if (parentId) body.parents = [parentId];
+    const newFolder = await driveAPI('POST', 'files', body);
+    return newFolder.id;
 }
 
 // Rewritten findFile to check Manage Accounts -> Company -> File
@@ -1004,23 +1010,43 @@ async function findFile(companyName, partyName) {
     try {
         const rootFolderId = await getOrCreateFolder('Manage Accounts');
         const companyFolderId = await getOrCreateFolder(companyName, rootFolderId);
-        
         const q = `name='${partyName}.xlsx' and '${companyFolderId}' in parents and trashed=false`;
-        const resp = await gapi.client.drive.files.list({ q });
-        return resp.result.files.length > 0 ? resp.result.files[0].id : null;
+        const resp = await driveAPI('GET', `files?q=${encodeURIComponent(q)}&fields=files(id)`);
+        return resp.files?.length > 0 ? resp.files[0].id : null;
     } catch (e) {
-        showToast('⚠️ Issue in saving data. Please contact author', 'error');
+        showContactAuthorPopup('finding the file on Google Drive');
         throw e;
     }
+}
+
+async function downloadFile(fileId) {
+  const r = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+  const buf = await r.arrayBuffer();
+  return new Uint8Array(buf).reduce((s, b) => s + String.fromCharCode(b), '');
 }
 
 async function uploadFile(fileId, binaryData, fileName) {
   const boundary = '-------314159265358979323846';
   const metadata = JSON.stringify({ name: fileName, mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-  const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\r\nContent-Transfer-Encoding: base64\r\n\r\n${btoa(binaryData)}\r\n--${boundary}--`;
+  const enc = new TextEncoder();
+  const metaPart = enc.encode(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\r\n\r\n`);
+  const closing = enc.encode(`\r\n--${boundary}--`);
+  const binBytes = Uint8Array.from(binaryData, c => c.charCodeAt(0));
+  const body = new Uint8Array(metaPart.length + binBytes.length + closing.length);
+  body.set(metaPart, 0); body.set(binBytes, metaPart.length); body.set(closing, metaPart.length + binBytes.length);
   const method = fileId ? 'PATCH' : 'POST';
-  const path = fileId ? `/upload/drive/v3/files/${fileId}` : '/upload/drive/v3/files';
-  await gapi.client.request({ path, method, params: { uploadType: 'multipart' }, headers: { 'Content-Type': `multipart/related; boundary="${boundary}"` }, body });
+  const url = fileId
+    ? `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart`
+    : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
+  const r = await fetch(url, {
+    method,
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': `multipart/related; boundary="${boundary}"` },
+    body
+  });
+  if (!r.ok) throw new Error('Upload failed: ' + await r.text());
+  return r.json();
 }
 
 // ── READ SHEET DATA ─────────────────────────────────
@@ -1159,7 +1185,7 @@ async function appendMultipleRowsToSheet(companyName, partyName, fiscal, rows) {
   } catch(e) {
     showLoader(false);
     console.error(e);
-    showToast('Error saving: ' + e.message, 'error');
+    showContactAuthorPopup('saving entries to Google Drive');
     return false;
   }
 }
@@ -1707,6 +1733,13 @@ function showToast(msg, type = '') {
 // ── LOADER ───────────────────────────────────────────
 function showLoader(show) {
   document.getElementById('loader').style.display = show ? 'flex' : 'none';
+}
+
+// ── CONTACT AUTHOR POPUP (Bug #7) ───────────────────
+function showContactAuthorPopup(context) {
+  showLoader(false);
+  const msg = `⚠️ An error occurred while ${context}.\n\nPlease contact the app author to resolve this issue.\n\nYour data has NOT been lost.`;
+  alert(msg);
 }
 
 // ── INIT ─────────────────────────────────────────────
