@@ -453,6 +453,93 @@ html, body {
 .empty-icon { font-size: 40px; margin-bottom: 10px; }
 .empty-text { font-size: 14px; }
 
+/* ── TYPE CHIPS ── */
+.type-chip-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.type-chip {
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: 'DM Sans', sans-serif;
+  background: var(--white);
+  color: var(--text-mid);
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.15s;
+  -webkit-tap-highlight-color: transparent;
+  line-height: 1.3;
+}
+.type-chip:active { transform: scale(0.96); }
+.type-chip.selected-debit {
+  background: #EEF5E8;
+  border-color: #2d6a27;
+  color: #2d6a27;
+}
+.type-chip.selected-credit {
+  background: #E8EFF7;
+  border-color: var(--navy);
+  color: var(--navy);
+}
+.type-chip.selected-journal {
+  background: var(--gold-light);
+  border-color: var(--gold);
+  color: #7a5c1a;
+}
+
+/* ── CUSTOM PARTICULARS DROPDOWN ── */
+.custom-select-wrap { position: relative; }
+.custom-select-input { cursor: pointer; }
+.custom-dropdown {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0; right: 0;
+  background: var(--white);
+  border: 1.5px solid var(--navy);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+  z-index: 150;
+  overflow: hidden;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.custom-dropdown.open { display: block; }
+.dropdown-item {
+  padding: 12px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 0.5px solid var(--border);
+  transition: background 0.1s;
+  -webkit-tap-highlight-color: transparent;
+}
+.dropdown-item:last-child { border-bottom: none; }
+.dropdown-item:hover, .dropdown-item.highlighted { background: var(--navy-pale); }
+.dropdown-item .di-icon { font-size: 16px; width: 22px; text-align: center; flex-shrink: 0; }
+.dropdown-item .di-label { font-weight: 600; }
+.dropdown-item .di-sub { font-size: 11px; color: var(--text-light); margin-top: 1px; }
+
+/* ── AMOUNT BADGE ── */
+#amount-col-badge.prod-sold {
+  background: #EEF5E8;
+  color: #2d6a27;
+  border: 1px solid #b3d9a0;
+}
+#amount-col-badge.pmt-recd {
+  background: var(--navy-pale);
+  color: var(--navy);
+  border: 1px solid #b3c8e0;
+}
+
 /* ── DRIVE AUTH ── */
 .drive-btn {
   display: flex;
@@ -575,57 +662,63 @@ html, body {
     <div class="content">
       <div class="context-pill" id="entry-context-pill"></div>
 
+      <!-- DATE -->
       <div class="form-group">
         <label class="form-label">Date</label>
         <input type="date" class="form-input" id="entry-date">
       </div>
 
+      <!-- VCH TYPE — tap chips -->
       <div class="form-group">
-    <label class="form-label">Particulars</label>
-    <input list="particulars-list" class="form-input" id="entry-particulars" placeholder="Select or type...">
-    <datalist id="particulars-list">
-        <option value="TROPHY">
-        <option value="PAYMENT">
-        <option value="JOURNAL">
-        <option value="DEBIT NOTE">
-        <option value="CREDIT NOTE">
-    </datalist>
-</div>
-
-
-
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">Vch. Type</label>
-          <select class="form-select" id="entry-vchtype">
-            <option value="">— Select —</option>
-            <option>Sale</option>
-            <option>Purchase</option>
-            <option>Receipt</option>
-            <option>Payment</option>
-            <option>Journal</option>
-            <option>Credit Note</option>
-            <option>Debit Note</option>
-          </select>
+        <label class="form-label">Transaction Type</label>
+        <div class="type-chip-grid" id="type-chip-grid">
+          <button class="type-chip" data-type="Sale"        data-col="debit"  data-particulars="TROPHY"  onclick="selectTypeChip(this)">🏷️ Sale</button>
+          <button class="type-chip" data-type="Payment"     data-col="credit" data-particulars="PAYMENT" onclick="selectTypeChip(this)">💸 Payment</button>
+          <button class="type-chip" data-type="Receipt"     data-col="credit" data-particulars="RECEIPT" onclick="selectTypeChip(this)">🧾 Receipt</button>
+          <button class="type-chip" data-type="Purchase"    data-col="debit"  data-particulars="PURCHASE" onclick="selectTypeChip(this)">🛒 Purchase</button>
+          <button class="type-chip" data-type="Credit Note" data-col="credit" data-particulars="CREDIT NOTE" onclick="selectTypeChip(this)">📋 Credit Note</button>
+          <button class="type-chip" data-type="Debit Note"  data-col="debit"  data-particulars="DEBIT NOTE"  onclick="selectTypeChip(this)">📋 Debit Note</button>
+          <button class="type-chip" data-type="Journal"     data-col=""       data-particulars="JOURNAL" onclick="selectTypeChip(this)">📒 Journal</button>
         </div>
-        <div class="form-group">
-    <label class="form-label">Vch. No.</label>
-    <div style="display:flex; align-items:center; background:var(--bg); border:1.5px solid var(--border); border-radius:var(--radius-sm); padding-left:10px;">
-        <span id="vch-prefix" style="font-size:13px; font-weight:600; color:var(--text-mid); border-right:1px solid var(--border); padding-right:8px;">AE/24-25/</span>
-        <input type="text" class="form-input" id="entry-vchno" style="border:none; background:transparent;" placeholder="001">
-    </div>
-</div>
-      </div><!-- /form-row vchtype+vchno -->
+        <input type="hidden" id="entry-vchtype-hidden" value="">
+      </div>
 
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">Debit (₹)</label>
-          <input type="number" class="form-input" id="entry-debit" placeholder="0" min="0" step="0.01">
+      <!-- PARTICULARS — custom dropdown -->
+      <div class="form-group" style="position:relative;">
+        <label class="form-label">Particulars</label>
+        <div class="custom-select-wrap" id="particulars-wrap">
+          <input type="text" class="form-input custom-select-input" id="entry-particulars"
+            placeholder="Select or type particulars…"
+            autocomplete="off"
+            oninput="filterParticulars(this.value)"
+            onfocus="openParticularsDropdown()"
+            onblur="closeParticularsDropdown()"
+            onkeydown="particularsKeyNav(event)">
+          <div class="custom-dropdown" id="particulars-dropdown">
+            <!-- populated by JS -->
+          </div>
         </div>
-        <div class="form-group">
-          <label class="form-label">Credit (₹)</label>
-          <input type="number" class="form-input" id="entry-credit" placeholder="0" min="0" step="0.01">
+      </div>
+
+      <!-- VCH NO -->
+      <div class="form-group">
+        <label class="form-label">Vch. No.</label>
+        <div style="display:flex;align-items:center;background:var(--bg);border:1.5px solid var(--border);border-radius:var(--radius-sm);padding-left:10px;">
+          <span id="vch-prefix" style="font-size:13px;font-weight:600;color:var(--text-mid);border-right:1px solid var(--border);padding-right:8px;white-space:nowrap;">TT/26-27/</span>
+          <input type="text" class="form-input" id="entry-vchno" style="border:none;background:transparent;" placeholder="001">
         </div>
+      </div>
+
+      <!-- AMOUNT — single smart field that relabels based on type -->
+      <div class="form-group">
+        <label class="form-label" id="amount-label">Amount (₹)</label>
+        <div style="position:relative;">
+          <div id="amount-col-badge" style="display:none;position:absolute;top:50%;right:12px;transform:translateY(-50%);font-size:10px;font-weight:700;padding:3px 8px;border-radius:10px;pointer-events:none;"></div>
+          <input type="number" class="form-input" id="entry-amount" placeholder="Enter amount" min="0" step="0.01" style="padding-right:110px;">
+        </div>
+        <!-- hidden cols still used by save logic -->
+        <input type="hidden" id="entry-debit">
+        <input type="hidden" id="entry-credit">
       </div>
 
       <button class="btn-primary" onclick="addToStagingList()" id="add-to-list-btn">➕ Add to List</button>
@@ -643,8 +736,8 @@ html, body {
                 <th style="padding:8px 7px;text-align:left;color:var(--navy);font-size:10px;font-weight:700;letter-spacing:0.05em;border-bottom:1px solid var(--border);">DATE</th>
                 <th style="padding:8px 7px;text-align:left;color:var(--navy);font-size:10px;font-weight:700;letter-spacing:0.05em;border-bottom:1px solid var(--border);">PARTICULARS</th>
                 <th style="padding:8px 7px;text-align:left;color:var(--navy);font-size:10px;font-weight:700;letter-spacing:0.05em;border-bottom:1px solid var(--border);">TYPE</th>
-                <th style="padding:8px 7px;text-align:right;color:var(--navy);font-size:10px;font-weight:700;letter-spacing:0.05em;border-bottom:1px solid var(--border);">DEBIT</th>
-                <th style="padding:8px 7px;text-align:right;color:var(--navy);font-size:10px;font-weight:700;letter-spacing:0.05em;border-bottom:1px solid var(--border);">CREDIT</th>
+                <th style="padding:8px 7px;text-align:right;color:var(--navy);font-size:10px;font-weight:700;letter-spacing:0.05em;border-bottom:1px solid var(--border);">PROD.SOLD</th>
+                <th style="padding:8px 7px;text-align:right;color:var(--navy);font-size:10px;font-weight:700;letter-spacing:0.05em;border-bottom:1px solid var(--border);">PMT.RECD</th>
                 <th style="padding:8px 7px;border-bottom:1px solid var(--border);"></th>
               </tr>
             </thead>
@@ -654,7 +747,7 @@ html, body {
         <!-- Running totals -->
         <div id="staging-totals" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;"></div>
 
-        <button class="btn-primary" onclick="saveAllEntries()" id="save-all-btn" style="margin-top:12px;">💾 Save All to Excel (Google Drive)</button>
+        <button class="btn-primary" onclick="saveAllEntries()" id="save-all-btn" style="margin-top:12px;">💾 Save All to Google Sheet</button>
       </div>
 
       <button class="btn-secondary" onclick="confirmCancelEntry()" style="margin-top:10px; margin-bottom:24px;">Cancel</button>
@@ -1509,60 +1602,193 @@ function goToAddEntry() {
     return; 
   }
 
-  // Set global state
   currentParty = party;
   currentFiscal = fiscal;
   stagingList = [];
   renderStagingList();
 
-  // 1. DYNAMIC PREFIX LOGIC (Bug 4)
-  // Uses short name if exists, otherwise takes first 2 letters of company name
+  // Dynamic prefix
   const short = currentCompany.short || currentCompany.name.slice(0, 2).toUpperCase();
   document.getElementById('vch-prefix').textContent = `${short}/${currentFiscal}/`;
 
-  // 2. RESET FIELDS
+  // Reset fields
   const today = new Date();
   document.getElementById('entry-date').value = today.toISOString().split('T')[0];
   document.getElementById('entry-particulars').value = '';
-  document.getElementById('entry-vchtype').value = '';
+  document.getElementById('entry-vchtype-hidden').value = '';
   document.getElementById('entry-vchno').value = '';
+  document.getElementById('entry-amount').value = '';
   document.getElementById('entry-debit').value = '';
   document.getElementById('entry-credit').value = '';
-  
-  // Re-enable fields (in case they were disabled by previous entry locking)
-  document.getElementById('entry-debit').disabled = false;
-  document.getElementById('entry-credit').disabled = false;
 
-  // 3. UI CONTEXT
+  // Reset chips
+  document.querySelectorAll('.type-chip').forEach(c =>
+    c.classList.remove('selected-debit', 'selected-credit', 'selected-journal')
+  );
+  currentAmountCol = '';
+  updateAmountUI('', '');
+
+  // Context
   document.getElementById('entry-context-sub').textContent = `${currentCompany.name} · ${party} · ${fiscal}`;
   document.getElementById('entry-context-pill').innerHTML = `🏢 ${currentCompany.name} &nbsp;|&nbsp; 👤 ${party} &nbsp;|&nbsp; 📅 ${fiscal}`;
   
   showScreen('screen-entry');
 }
 
-  // BUG 1 fix handled in real addCompany() below
+  // ── TYPE CHIP LOGIC ─────────────────────────────────
 
-// ── VCH TYPE LOCKING + MUTUAL EXCLUSION (single set of listeners) ──
-document.getElementById('entry-vchtype').addEventListener('change', (e) => {
-  const type = e.target.value;
-  const dr = document.getElementById('entry-debit');
-  const cr = document.getElementById('entry-credit');
-  dr.disabled = false; cr.disabled = false;
-  dr.value = ''; cr.value = '';
-  if (['Payment', 'Purchase', 'Debit Note'].includes(type)) {
-    cr.disabled = true;
-  } else if (['Receipt', 'Sale', 'Credit Note'].includes(type)) {
-    dr.disabled = true;
+// Map: vchType → which Excel column gets the amount
+// 'debit'  = Product Sold (col E)
+// 'credit' = Payment Received (col F)
+const TYPE_COLUMN_MAP = {
+  'Sale':        'debit',
+  'Purchase':    'debit',
+  'Debit Note':  'debit',
+  'Receipt':     'credit',
+  'Payment':     'credit',
+  'Credit Note': 'credit',
+  'Journal':     '' // both shown, user picks
+};
+
+const PARTICULARS_OPTIONS = [
+  { label: 'TROPHY',      icon: '🏆', sub: 'Trophy / product sale' },
+  { label: 'PAYMENT',     icon: '💸', sub: 'Payment received from party' },
+  { label: 'RECEIPT',     icon: '🧾', sub: 'Receipt of goods/cash' },
+  { label: 'PURCHASE',    icon: '🛒', sub: 'Purchase of goods' },
+  { label: 'JOURNAL',     icon: '📒', sub: 'Journal entry' },
+  { label: 'DEBIT NOTE',  icon: '📋', sub: 'Debit note issued' },
+  { label: 'CREDIT NOTE', icon: '📋', sub: 'Credit note issued' },
+];
+
+let particularsDropdownOpen = false;
+let particularsHighlightIdx = -1;
+let currentAmountCol = ''; // 'debit' or 'credit' or ''
+
+function selectTypeChip(el) {
+  // Deselect all chips
+  document.querySelectorAll('.type-chip').forEach(c => {
+    c.classList.remove('selected-debit', 'selected-credit', 'selected-journal');
+  });
+
+  const type = el.dataset.type;
+  const col  = el.dataset.col;
+  const suggestedParticulars = el.dataset.particulars;
+
+  // Apply selected style
+  if (col === 'debit')   el.classList.add('selected-debit');
+  else if (col === 'credit') el.classList.add('selected-credit');
+  else el.classList.add('selected-journal');
+
+  // Store selected type in hidden field (reusing entry-vchtype concept)
+  document.getElementById('entry-vchtype-hidden').value = type;
+  currentAmountCol = col;
+
+  // Auto-fill particulars if empty
+  const partInput = document.getElementById('entry-particulars');
+  if (!partInput.value.trim()) {
+    partInput.value = suggestedParticulars;
   }
-});
 
-// Mutual Exclusion for Debit/Credit
-document.getElementById('entry-debit').addEventListener('input', () => {
-    if(document.getElementById('entry-debit').value > 0) document.getElementById('entry-credit').value = 0;
-});
-document.getElementById('entry-credit').addEventListener('input', () => {
-    if(document.getElementById('entry-credit').value > 0) document.getElementById('entry-debit').value = 0;
-});
+  // Update amount label + badge
+  updateAmountUI(col, type);
+
+  // Focus amount
+  setTimeout(() => document.getElementById('entry-amount').focus(), 50);
+}
+
+function updateAmountUI(col, type) {
+  const label  = document.getElementById('amount-label');
+  const badge  = document.getElementById('amount-col-badge');
+  const input  = document.getElementById('entry-amount');
+
+  if (col === 'debit') {
+    label.textContent  = 'Product Sold (₹)';
+    badge.textContent  = '📦 Product Sold';
+    badge.className    = 'prod-sold';
+    badge.style.display = 'block';
+    input.style.paddingRight = '130px';
+  } else if (col === 'credit') {
+    label.textContent  = 'Payment Received (₹)';
+    badge.textContent  = '💳 Pmt. Received';
+    badge.className    = 'pmt-recd';
+    badge.style.display = 'block';
+    input.style.paddingRight = '130px';
+  } else {
+    // Journal — no restriction
+    label.textContent  = 'Amount (₹)';
+    badge.style.display = 'none';
+    input.style.paddingRight = '14px';
+  }
+}
+
+// ── PARTICULARS DROPDOWN ──────────────────────────────
+function buildDropdownItems(filter) {
+  const dd = document.getElementById('particulars-dropdown');
+  const q  = (filter || '').trim().toUpperCase();
+  const matches = PARTICULARS_OPTIONS.filter(o =>
+    !q || o.label.includes(q) || o.sub.toUpperCase().includes(q)
+  );
+  if (!matches.length) {
+    dd.innerHTML = `<div class="dropdown-item" style="color:var(--text-light);font-style:italic;">
+      <span class="di-icon">💬</span><div><div class="di-label">"${filter}"</div><div class="di-sub">Custom entry</div></div></div>`;
+    particularsHighlightIdx = -1;
+    return;
+  }
+  dd.innerHTML = matches.map((o, i) => `
+    <div class="dropdown-item" data-value="${o.label}" onmousedown="pickParticulars('${o.label}')" >
+      <span class="di-icon">${o.icon}</span>
+      <div>
+        <div class="di-label">${o.label}</div>
+        <div class="di-sub">${o.sub}</div>
+      </div>
+    </div>`).join('');
+  particularsHighlightIdx = -1;
+}
+
+function openParticularsDropdown() {
+  buildDropdownItems(document.getElementById('entry-particulars').value);
+  document.getElementById('particulars-dropdown').classList.add('open');
+  particularsDropdownOpen = true;
+}
+
+function closeParticularsDropdown() {
+  // small delay so onmousedown fires first
+  setTimeout(() => {
+    document.getElementById('particulars-dropdown').classList.remove('open');
+    particularsDropdownOpen = false;
+  }, 150);
+}
+
+function filterParticulars(val) {
+  buildDropdownItems(val);
+  if (!particularsDropdownOpen) openParticularsDropdown();
+}
+
+function pickParticulars(value) {
+  document.getElementById('entry-particulars').value = value;
+  document.getElementById('particulars-dropdown').classList.remove('open');
+  particularsDropdownOpen = false;
+  setTimeout(() => document.getElementById('entry-amount').focus(), 50);
+}
+
+function particularsKeyNav(e) {
+  const dd    = document.getElementById('particulars-dropdown');
+  const items = dd.querySelectorAll('.dropdown-item[data-value]');
+  if (!items.length) return;
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    particularsHighlightIdx = Math.min(particularsHighlightIdx + 1, items.length - 1);
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    particularsHighlightIdx = Math.max(particularsHighlightIdx - 1, 0);
+  } else if (e.key === 'Enter' && particularsHighlightIdx >= 0) {
+    e.preventDefault();
+    pickParticulars(items[particularsHighlightIdx].dataset.value);
+    return;
+  } else { return; }
+  items.forEach((it, i) => it.classList.toggle('highlighted', i === particularsHighlightIdx));
+  items[particularsHighlightIdx]?.scrollIntoView({ block: 'nearest' });
+}
 
 async function goToReport() {
   const party = document.getElementById('party-select').value;
@@ -1649,15 +1875,21 @@ function renderReport(rows) {
 let stagingList = []; // holds rows before final save
 
 function addToStagingList() {
-  const date = document.getElementById('entry-date').value;
+  const date        = document.getElementById('entry-date').value;
   const particulars = document.getElementById('entry-particulars').value.trim();
-  const vchType = document.getElementById('entry-vchtype').value;
-  const vchNo = document.getElementById('entry-vchno').value.trim();
-  const debit = parseFloat(document.getElementById('entry-debit').value) || 0;
-  const credit = parseFloat(document.getElementById('entry-credit').value) || 0;
+  const vchType     = document.getElementById('entry-vchtype-hidden').value;
+  const vchNo       = document.getElementById('entry-vchno').value.trim();
+  const amount      = parseFloat(document.getElementById('entry-amount').value) || 0;
 
-  if (!date || !particulars) { showToast('Date and Particulars are required', 'error'); return; }
-  if (!debit && !credit) { showToast('Enter Debit or Credit amount', 'error'); return; }
+  if (!date)        { showToast('Date is required', 'error'); return; }
+  if (!particulars) { showToast('Particulars are required', 'error'); return; }
+  if (!vchType)     { showToast('Select a Transaction Type', 'error'); return; }
+  if (!amount)      { showToast('Enter an amount', 'error'); return; }
+
+  // Route amount to the correct column based on type
+  const col    = TYPE_COLUMN_MAP[vchType] || '';
+  const debit  = col === 'debit'  ? amount : 0;
+  const credit = col === 'credit' ? amount : 0;
 
   const d = new Date(date);
   const fmtDate = `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getFullYear()).slice(2)}`;
@@ -1665,16 +1897,15 @@ function addToStagingList() {
   stagingList.push({ date: fmtDate, particulars: particulars.toUpperCase(), vchType, vchNo, debit, credit });
   renderStagingList();
 
-  // Clear form fields (keep date for convenience), reset disabled state
+  // Reset: keep date + type chip, just clear amount, particulars, vchNo
   document.getElementById('entry-particulars').value = '';
-  document.getElementById('entry-vchtype').value = '';
   document.getElementById('entry-vchno').value = '';
-  document.getElementById('entry-debit').value = '';
-  document.getElementById('entry-credit').value = '';
-  document.getElementById('entry-debit').disabled = false;
-  document.getElementById('entry-credit').disabled = false;
-  document.getElementById('entry-particulars').focus();
-  showToast(`Row ${stagingList.length} added to list`, 'success');
+  document.getElementById('entry-amount').value = '';
+  // Re-populate particulars suggestion from chip
+  const activeChip = document.querySelector('.type-chip.selected-debit, .type-chip.selected-credit, .type-chip.selected-journal');
+  if (activeChip) document.getElementById('entry-particulars').value = activeChip.dataset.particulars;
+  document.getElementById('entry-amount').focus();
+  showToast(`Row ${stagingList.length} added ✓`, 'success');
 }
 
 function renderStagingList() {
