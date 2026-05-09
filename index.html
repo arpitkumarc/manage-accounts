@@ -490,7 +490,7 @@ html, body {
   <div id="screen-home" class="screen active">
     <div class="home-header">
       <div class="home-logo">📒 Accounts Manager</div>
-      <div class="home-tagline">TANMAY TROPHY MFG. CO.</div>
+      <div class="home-tagline">Interactive Accounting at fingertips</div>
       <div class="home-gapi-status">
         <div class="status-dot" id="drive-status-dot"></div>
         <span id="drive-status-text">Google Drive: Not connected</span>
@@ -861,134 +861,172 @@ async function driveAPI(method, path, body = null) {
   return r.json();
 }
 
-async function findCompanyMasterSheet() {
-  try {
-    // Find or create "Manage Accounts" folder
-    const folderSearch = await driveAPI('GET', `files?q=${encodeURIComponent("name='Manage Accounts' and mimeType='application/vnd.google-apps.folder' and trashed=false")}&fields=files(id)`);
-    let folderId = folderSearch.files?.[0]?.id;
-    if (!folderId) {
-      const newF = await driveAPI('POST', 'files', { name: 'Manage Accounts', mimeType: 'application/vnd.google-apps.folder' });
-      folderId = newF.id;
-    }
-    // Find or create "Company Master" Google Sheet inside it
-    const sheetSearch = await driveAPI('GET', `files?q=${encodeURIComponent(`name='Company Master' and '${folderId}' in parents and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`)}&fields=files(id)`);
-    if (sheetSearch.files?.length > 0) {
-      companyMasterFileId = sheetSearch.files[0].id;
-      return companyMasterFileId;
-    }
-    // Create it
-    const newSheet = await driveAPI('POST', 'files', {
-      name: 'Company Master',
-      mimeType: 'application/vnd.google-apps.spreadsheet',
-      parents: [folderId]
-    });
-    companyMasterFileId = newSheet.id;
-    await syncCompanyMasterToSheet();
-    return companyMasterFileId;
-  } catch(e) {
-    console.error('Company Master error:', e);
-    return null;
+// Sheets helper — all Sheets API calls go through here
+async function sheetsAPI(method, path, body = null) {
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${path}`;
+  const opts = { method, headers: { Authorization: `Bearer ${accessToken}` } };
+  if (body) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
+  const r = await fetch(url, opts);
+  if (!r.ok) {
+    const err = await r.text();
+    throw new Error(`Sheets API ${method} ${path} failed: ${err}`);
   }
+  return r.json();
+}
+
+// Always resolves companyMasterFileId — finds folder+sheet or creates them
+async function ensureCompanyMasterSheet() {
+  if (companyMasterFileId) return companyMasterFileId; // already cached
+
+  // 1. Find or create "Manage Accounts" folder
+  const folderSearch = await driveAPI('GET',
+    `files?q=${encodeURIComponent("name='Manage Accounts' and mimeType='application/vnd.google-apps.folder' and trashed=false")}&fields=files(id,name)`
+  );
+  let folderId = folderSearch.files?.[0]?.id;
+  if (!folderId) {
+    const newF = await driveAPI('POST', 'files', { name: 'Manage Accounts', mimeType: 'application/vnd.google-apps.folder' });
+    if (!newF.id) throw new Error('Could not create Manage Accounts folder');
+    folderId = newF.id;
+    console.log('Created Manage Accounts folder:', folderId);
+  } else {
+    console.log('Found Manage Accounts folder:', folderId);
+  }
+
+  // 2. Find or create "Company Master" sheet inside it
+  const sheetSearch = await driveAPI('GET',
+    `files?q=${encodeURIComponent(`name='Company Master' and '${folderId}' in parents and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`)}&fields=files(id,name)`
+  );
+  if (sheetSearch.files?.length > 0) {
+    companyMasterFileId = sheetSearch.files[0].id;
+    console.log('Found Company Master sheet:', companyMasterFileId);
+    return companyMasterFileId;
+  }
+
+  // 3. Create the sheet
+  const newSheet = await driveAPI('POST', 'files', {
+    name: 'Company Master',
+    mimeType: 'application/vnd.google-apps.spreadsheet',
+    parents: [folderId]
+  });
+  if (!newSheet.id) throw new Error('Could not create Company Master sheet');
+  companyMasterFileId = newSheet.id;
+  console.log('Created Company Master sheet:', companyMasterFileId);
+  return companyMasterFileId;
 }
 
 async function loadCompanyMasterFromSheet() {
+  if (!driveConnected) { showToast('Connect to Google Drive first', 'error'); return; }
+  showLoader(true);
   try {
-    showLoader(true);
-    const fileId = await findCompanyMasterSheet();
-    if (!fileId) { showLoader(false); return; }
+    const fileId = await ensureCompanyMasterSheet();
 
-    // Get all sheet tabs using fetch directly (avoids gapi discovery issues)
-    const metaResp = await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${fileId}?fields=sheets.properties`,
-      { headers: { Authorization: `Bearer ${accessToken}` } }
-    );
-    const meta = await metaResp.json();
+    // Read all sheet tabs (each tab = one company)
+    const meta = await sheetsAPI('GET', `${fileId}?fields=sheets.properties`);
     const sheets = meta.sheets || [];
-    if (!sheets.length) { showLoader(false); return; }
+    console.log('Sheet tabs found:', sheets.map(s => s.properties.title));
 
     const newCompanies = [];
     for (const sheet of sheets) {
-      const companyName = sheet.properties.title;
-      if (companyName === 'Sheet1') continue;
+      const tabName = sheet.properties.title;
+      if (tabName === 'Sheet1') continue; // skip default empty tab
+
       // Read column A for party names
-      const dataResp = await fetch(
-        `https://sheets.googleapis.com/v4/spreadsheets/${fileId}/values/${encodeURIComponent(companyName + '!A:A')}`,
-        { headers: { Authorization: `Bearer ${accessToken}` } }
-      );
-      const data = await dataResp.json();
-      const vals = data.values || [];
-      const parties = vals.flat().map(v => String(v).trim().toUpperCase()).filter(v => v && v !== companyName.toUpperCase());
-      const id = companyName.toLowerCase().replace(/\s+/g, '_');
-      const short = companyName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-      newCompanies.push({ id, name: companyName.toUpperCase(), short, parties });
+      let vals = [];
+      try {
+        const data = await sheetsAPI('GET', `${fileId}/values/${encodeURIComponent(tabName + '!A:A')}`);
+        vals = data.values || [];
+      } catch(e) {
+        console.warn(`Could not read tab ${tabName}:`, e);
+      }
+      const parties = vals.flat()
+        .map(v => String(v).trim().toUpperCase())
+        .filter(v => v && v !== tabName.toUpperCase() && v !== 'PARTY NAME');
+
+      const id = tabName.toLowerCase().replace(/\s+/g, '_');
+      const short = tabName.split(' ').filter(Boolean).map(w => w[0]).join('').slice(0, 2).toUpperCase();
+      newCompanies.push({ id, name: tabName.toUpperCase(), short, parties });
+      console.log(`Loaded company: ${tabName}, parties:`, parties);
     }
+
+    showLoader(false);
 
     if (newCompanies.length > 0) {
       CONFIG.companies = newCompanies;
       saveConfig();
       renderCompanyList();
-      showLoader(false);
-      showToast(`Loaded ${newCompanies.length} companies from Company Master ✓`, 'success');
+      showToast(`Loaded ${newCompanies.length} compan${newCompanies.length > 1 ? 'ies' : 'y'} from Company Master ✓`, 'success');
     } else {
-      showLoader(false);
+      // Sheet exists but has no company tabs yet — push local CONFIG into it
+      showToast('Company Master is empty — syncing local data to sheet...', '');
       await syncCompanyMasterToSheet();
     }
   } catch(e) {
     showLoader(false);
     console.error('Load Company Master error:', e);
-    showToast('Could not load Company Master — using local data', '');
+    showToast('Error loading Company Master: ' + e.message, 'error');
   }
 }
 
 async function syncCompanyMasterToSheet() {
+  if (!driveConnected) return;
   try {
-    const fileId = companyMasterFileId || await findCompanyMasterSheet();
-    if (!fileId) return;
+    const fileId = await ensureCompanyMasterSheet(); // always resolves, never null
 
-    // Get existing sheet tabs via fetch
-    const metaResp = await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${fileId}?fields=sheets.properties`,
-      { headers: { Authorization: `Bearer ${accessToken}` } }
-    );
-    const meta = await metaResp.json();
-    const existingSheets = (meta.sheets || []).map(s => ({ title: s.properties.title, id: s.properties.sheetId }));
+    // Get current tabs
+    const meta = await sheetsAPI('GET', `${fileId}?fields=sheets.properties`);
+    const existingSheets = (meta.sheets || []).map(s => ({
+      title: s.properties.title,
+      id: s.properties.sheetId
+    }));
+    console.log('Syncing. Existing tabs:', existingSheets.map(s => s.title));
+    console.log('Config companies:', CONFIG.companies.map(c => c.name));
 
+    // Build batch requests: add missing tabs, delete removed tabs
     const requests = [];
     for (const co of CONFIG.companies) {
-      if (!existingSheets.find(s => s.title.toUpperCase() === co.name)) {
+      const exists = existingSheets.find(s => s.title.toUpperCase() === co.name.toUpperCase());
+      if (!exists) {
         requests.push({ addSheet: { properties: { title: co.name } } });
+        console.log('Will add tab:', co.name);
       }
     }
     for (const ex of existingSheets) {
       if (ex.title === 'Sheet1') continue;
-      if (!CONFIG.companies.find(c => c.name === ex.title.toUpperCase())) {
+      const stillExists = CONFIG.companies.find(c => c.name.toUpperCase() === ex.title.toUpperCase());
+      if (!stillExists) {
         requests.push({ deleteSheet: { sheetId: ex.id } });
+        console.log('Will delete tab:', ex.title);
       }
     }
 
     if (requests.length > 0) {
-      await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${fileId}:batchUpdate`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ requests })
-      });
+      await sheetsAPI('POST', `${fileId}:batchUpdate`, { requests });
+      console.log('Tab structure updated');
     }
 
-    // Write party names into each tab
-    const valueData = CONFIG.companies.map(co => ({
-      range: `${co.name}!A1`,
-      values: co.parties.map(p => [p])
-    })).filter(d => d.values.length > 0);
+    // Write party names — clear then write to avoid stale data
+    if (CONFIG.companies.length > 0) {
+      // First clear all company ranges
+      const clearRanges = CONFIG.companies.map(co => `${co.name}!A:A`);
+      await sheetsAPI('POST', `${fileId}/values:batchClear`, { ranges: clearRanges });
 
-    if (valueData.length > 0) {
-      await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${fileId}/values:batchUpdate`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ valueInputOption: 'RAW', data: valueData })
+      // Then write fresh data (only companies that have parties)
+      const valueData = CONFIG.companies.map(co => ({
+        range: `${co.name}!A1`,
+        values: co.parties.length > 0 ? co.parties.map(p => [p]) : [['(no parties yet)']]
+      }));
+
+      await sheetsAPI('POST', `${fileId}/values:batchUpdate`, {
+        valueInputOption: 'RAW',
+        data: valueData
       });
+      console.log('Party data written to sheet');
     }
+
+    showToast('Synced to Company Master ✓', 'success');
   } catch(e) {
     console.error('Sync Company Master error:', e);
+    showToast('Sync error: ' + e.message, 'error');
   }
 }
 
@@ -1625,8 +1663,13 @@ function renderSettings() {
   html += `<button class="settings-add-btn" onclick="openModal('modal-add-company')" style="margin-top:4px; width:100%">+ Add Company</button>`;
   html += `<div style="margin-top:20px; padding:14px; background:var(--white); border-radius:var(--radius); border:1px solid var(--border);">
     <div style="font-size:12px; font-weight:600; color:var(--text-mid); margin-bottom:4px;">COMPANY MASTER (Google Drive)</div>
-    <div style="font-size:11px; color:var(--text-light); margin-bottom:10px;">Stored in: Manage Accounts / Company Master (Google Sheet)<br>Changes here sync automatically to the sheet.</div>
-    <button class="btn-secondary" onclick="loadCompanyMasterFromSheet()" style="margin-top:0; margin-bottom:8px;">🔄 Reload from Google Sheet</button>
+    <div style="font-size:11px; color:var(--text-light); margin-bottom:10px;">
+      Stored in: <strong>Manage Accounts / Company Master</strong> (Google Sheet)<br>
+      Each tab = company · Column A = party names<br>
+      ${companyMasterFileId ? '✅ Sheet ID: <code style="font-size:10px;">' + companyMasterFileId + '</code>' : '⚠️ Sheet not yet located — click Reload to connect'}
+    </div>
+    <button class="btn-primary" onclick="loadCompanyMasterFromSheet()" style="margin-top:0; margin-bottom:8px; font-size:13px;">🔄 Reload from Google Sheet</button>
+    <button class="btn-secondary" onclick="syncCompanyMasterToSheet()" style="margin-top:0; margin-bottom:8px;">⬆️ Push local data → Sheet</button>
     <button class="btn-secondary" onclick="handleAuthClick()" style="margin-top:0">🔗 Re-connect Google Drive</button>
   </div>`;
   content.innerHTML = html;
