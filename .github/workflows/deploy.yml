@@ -11,9 +11,10 @@ jobs:
 
       - name: Inject Secrets into index.html
         run: |
-          # This replaces the placeholder text with your real secrets
-          sed -i "s/YOUR_API_KEY_PLACEHOLDER/${{ secrets.GOOGLE_API_KEY }}/g" index.html
-          sed -i "s/YOUR_CLIENT_ID_PLACEHOLDER/${{ secrets.GOOGLE_CLIENT_ID }}/g" index.html
+          # We use a different delimiter (|) in case your keys have slashes
+          # and we target the placeholder name regardless of quotes
+          sed -i 's|YOUR_API_KEY_PLACEHOLDER|${{ secrets.GOOGLE_API_KEY }}|g' index.html
+          sed -i 's|YOUR_CLIENT_ID_PLACEHOLDER|${{ secrets.GOOGLE_CLIENT_ID }}|g' index.html
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
