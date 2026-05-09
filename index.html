@@ -750,29 +750,13 @@ const CLIENT_ID = 'YOUR_CLIENT_ID_PLACEHOLDER';  // Replace with your Google API
 const SCOPES    = 'https://www.googleapis.com/auth/drive';
 
 // Company + Party data (saved to localStorage so settings persist)
-let CONFIG = JSON.parse(localStorage.getItem('accounts_config') || 'null') || {
-  companies: [
-    {
-      id: 'medicos_surgicals',
-      name: 'MEDICOS SURGICALS',
-      short: 'MS',
-      parties: ['CARE HOSPITAL','SYNERGY HOSPITAL','LIFEGIVING HOSPITAL','NEW CITY HOSPITAL','CHIRAYU HOSPITAL']
-    },
-    {
-      id: 'medicos_electronics',
-      name: 'MEDICOS ELECTRONICS',
-      short: 'ME',
-      parties: ['CARE HOSPITAL','SYNERGY HOSPITAL','LIFEGIVING HOSPITAL']
-    },
-    {
-      id: 'spark_international',
-      name: 'SPARK INTERNATIONAL',
-      short: 'SI',
-      parties: ['SPARK CREATIONS','SILVER TOUCH']
-    }
-  ]
-};
-saveConfig();
+const savedData = localStorage.getItem('accounts_config');
+let CONFIG = (savedData && savedData !== 'null') ? JSON.parse(savedData) : { companies: [] };
+
+// Immediately save if it was empty to initialize the key
+if (!savedData) {
+    saveConfig();
+}
 
 function saveConfig() {
   localStorage.setItem('accounts_config', JSON.stringify(CONFIG));
