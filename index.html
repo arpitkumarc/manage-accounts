@@ -490,7 +490,7 @@ html, body {
   <div id="screen-home" class="screen active">
     <div class="home-header">
       <div class="home-logo">📒 Accounts Manager</div>
-      <div class="home-tagline">TANMAY TROPHY MFG. CO.</div>
+      <div class="home-tagline">Interactive Accounting at fingertips</div>
       <div class="home-gapi-status">
         <div class="status-dot" id="drive-status-dot"></div>
         <span id="drive-status-text">Google Drive: Not connected</span>
@@ -615,6 +615,7 @@ html, body {
         <input type="text" class="form-input" id="entry-vchno" style="border:none; background:transparent;" placeholder="001">
     </div>
 </div>
+      </div><!-- /form-row vchtype+vchno -->
 
       <div class="form-row">
         <div class="form-group">
@@ -758,7 +759,7 @@ html, body {
 const SETTINGS_PASSWORD = 'tanmay2025';
 const API_KEY = 'YOUR_API_KEY_PLACEHOLDER';
 const CLIENT_ID = 'YOUR_CLIENT_ID_PLACEHOLDER';  // Replace with your Google API Key
-const SCOPES    = 'https://www.googleapis.com/auth/drive';
+const SCOPES    = 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/spreadsheets';
 
 // Company + Party data (saved to localStorage so settings persist)
 const savedData = localStorage.getItem('accounts_config');
@@ -801,7 +802,10 @@ let reportRows     = [];
 // ── GOOGLE DRIVE API ────────────────────────────────
 function initGapi() {
   gapi.load('client', async () => {
-    await gapi.client.init({ apiKey: API_KEY, discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'] });
+    await gapi.client.init({ apiKey: API_KEY, discoveryDocs: [
+      'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest',
+      'https://sheets.googleapis.com/$discovery/rest?version=v4'
+    ] });
     tokenClient = google.accounts.oauth2.initTokenClient({
       client_id: CLIENT_ID,
       scope: SCOPES,
@@ -812,6 +816,8 @@ function initGapi() {
         updateDriveStatus(true);
         document.getElementById('drive-connect-section').style.display = 'none';
         showToast('Google Drive connected ✓', 'success');
+        // Load company master from sheet
+        loadCompanyMasterFromSheet();
       }
     });
     // Auto-prompt if token exists
@@ -834,23 +840,146 @@ function updateDriveStatus(connected) {
   if (connected) document.getElementById('drive-connect-section').style.display = 'none';
 }
 
-// ── DRIVE FILE OPERATIONS ───────────────────────────
-async function findFile(companyName, partyName) {
-  // Search for file: CompanyName/PartyName.xlsx
-  const q = `name='${partyName}.xlsx' and mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' and trashed=false`;
-  const resp = await gapi.client.drive.files.list({ q, fields: 'files(id,name,parents)', spaces: 'drive' });
-  // Also verify it's inside the right company folder
-  const files = resp.result.files || [];
-  // If multiple matches (same party name in different companies), match by parent folder name
-  for (const f of files) {
-    const parentId = f.parents?.[0];
-    if (parentId) {
-      const folderResp = await gapi.client.drive.files.get({ fileId: parentId, fields: 'name' });
-      if (folderResp.result.name.toUpperCase() === companyName.toUpperCase()) return f.id;
+// ── COMPANY MASTER (Google Sheets in Drive) ──────────
+// File: "Manage Accounts/Company Master" (Google Sheet)
+// Each tab = company name, Column A = party names
+
+let companyMasterFileId = null;
+
+async function findCompanyMasterSheet() {
+  try {
+    // Find "Manage Accounts" folder
+    const folderQ = `name='Manage Accounts' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+    const folderResp = await gapi.client.drive.files.list({ q: folderQ, fields: 'files(id)' });
+    let folderId = folderResp.result.files?.[0]?.id;
+    if (!folderId) {
+      // Create it
+      const newF = await gapi.client.drive.files.create({ resource: { name: 'Manage Accounts', mimeType: 'application/vnd.google-apps.folder' }, fields: 'id' });
+      folderId = newF.result.id;
     }
+    // Find "Company Master" sheet inside it
+    const sheetQ = `name='Company Master' and '${folderId}' in parents and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`;
+    const sheetResp = await gapi.client.drive.files.list({ q: sheetQ, fields: 'files(id)' });
+    if (sheetResp.result.files?.length > 0) {
+      companyMasterFileId = sheetResp.result.files[0].id;
+      return companyMasterFileId;
+    }
+    // Create the sheet with initial data from current CONFIG
+    const createResp = await gapi.client.drive.files.create({
+      resource: { name: 'Company Master', mimeType: 'application/vnd.google-apps.spreadsheet', parents: [folderId] },
+      fields: 'id'
+    });
+    companyMasterFileId = createResp.result.id;
+    // Push current config into it
+    await syncCompanyMasterToSheet();
+    return companyMasterFileId;
+  } catch(e) {
+    console.error('Company Master error:', e);
+    return null;
   }
-  return null;
 }
+
+async function loadCompanyMasterFromSheet() {
+  try {
+    showLoader(true);
+    const fileId = await findCompanyMasterSheet();
+    if (!fileId) { showLoader(false); return; }
+
+    // Get all sheet tabs (companies)
+    const metaResp = await gapi.client.request({
+      path: `https://sheets.googleapis.com/v4/spreadsheets/${fileId}`,
+      params: { fields: 'sheets.properties' }
+    });
+    const sheets = metaResp.result.sheets || [];
+    if (!sheets.length) { showLoader(false); return; }
+
+    const newCompanies = [];
+    for (const sheet of sheets) {
+      const companyName = sheet.properties.title;
+      if (companyName === 'Sheet1') continue; // skip default empty tab
+      // Read column A for party names
+      const dataResp = await gapi.client.request({
+        path: `https://sheets.googleapis.com/v4/spreadsheets/${fileId}/values/${encodeURIComponent(companyName + '!A:A')}`
+      });
+      const vals = dataResp.result.values || [];
+      const parties = vals.flat().map(v => String(v).trim().toUpperCase()).filter(v => v && v !== companyName.toUpperCase());
+      const id = companyName.toLowerCase().replace(/\s+/g, '_');
+      const short = companyName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+      newCompanies.push({ id, name: companyName.toUpperCase(), short, parties });
+    }
+
+    if (newCompanies.length > 0) {
+      CONFIG.companies = newCompanies;
+      saveConfig();
+      renderCompanyList();
+      showLoader(false);
+      showToast(`Loaded ${newCompanies.length} companies from Company Master ✓`, 'success');
+    } else {
+      // Sheet exists but empty — push our local config into it
+      showLoader(false);
+      await syncCompanyMasterToSheet();
+    }
+  } catch(e) {
+    showLoader(false);
+    console.error('Load Company Master error:', e);
+    showToast('Could not load Company Master — using local data', '');
+  }
+}
+
+async function syncCompanyMasterToSheet() {
+  try {
+    const fileId = companyMasterFileId || await findCompanyMasterSheet();
+    if (!fileId) return;
+
+    // Get existing sheet tabs
+    const metaResp = await gapi.client.request({
+      path: `https://sheets.googleapis.com/v4/spreadsheets/${fileId}`,
+      params: { fields: 'sheets.properties' }
+    });
+    const existingSheets = (metaResp.result.sheets || []).map(s => ({ title: s.properties.title, id: s.properties.sheetId }));
+
+    const requests = [];
+    // Add missing company tabs
+    for (const co of CONFIG.companies) {
+      if (!existingSheets.find(s => s.title.toUpperCase() === co.name)) {
+        requests.push({ addSheet: { properties: { title: co.name } } });
+      }
+    }
+    // Delete removed company tabs (not Sheet1)
+    for (const ex of existingSheets) {
+      if (ex.title === 'Sheet1') continue;
+      if (!CONFIG.companies.find(c => c.name === ex.title.toUpperCase())) {
+        requests.push({ deleteSheet: { sheetId: ex.id } });
+      }
+    }
+
+    if (requests.length > 0) {
+      await gapi.client.request({
+        path: `https://sheets.googleapis.com/v4/spreadsheets/${fileId}:batchUpdate`,
+        method: 'POST',
+        body: JSON.stringify({ requests })
+      });
+    }
+
+    // Write party names into each company tab
+    const valueData = [];
+    for (const co of CONFIG.companies) {
+      const values = co.parties.map(p => [p]);
+      valueData.push({ range: `${co.name}!A1`, values });
+    }
+    if (valueData.length > 0) {
+      await gapi.client.request({
+        path: `https://sheets.googleapis.com/v4/spreadsheets/${fileId}/values:batchUpdate`,
+        method: 'POST',
+        body: JSON.stringify({ valueInputOption: 'RAW', data: valueData })
+      });
+    }
+  } catch(e) {
+    console.error('Sync Company Master error:', e);
+  }
+}
+
+// ── DRIVE FILE OPERATIONS ───────────────────────────
 
 async function downloadFile(fileId) {
   const resp = await gapi.client.drive.files.get({ fileId, alt: 'media' });
@@ -1126,28 +1255,20 @@ function goToAddEntry() {
   showScreen('screen-entry');
 }
 
-  // BUG 1: Clear Add Company Modal
-function addCompany() {
-    const name = document.getElementById('new-company-name').value.trim().toUpperCase();
-    if (!name) { showToast('Enter a company name', 'error'); return; }
-    // ... existing logic ...
-    document.getElementById('new-company-name').value = ''; // FIX: Clear field
-    closeModal('modal-add-company');
-}
+  // BUG 1 fix handled in real addCompany() below
 
-// BUG 5 & 6: VCH Type Locking and Debit/Credit Exclusion
+// ── VCH TYPE LOCKING + MUTUAL EXCLUSION (single set of listeners) ──
 document.getElementById('entry-vchtype').addEventListener('change', (e) => {
-    const type = e.target.value;
-    const dr = document.getElementById('entry-debit');
-    const cr = document.getElementById('entry-credit');
-    
-    dr.disabled = false; cr.disabled = false;
-    
-    if (['Payment', 'Purchase', 'Debit Note'].includes(type)) {
-        cr.value = 0; cr.disabled = true;
-    } else if (['Receipt', 'Sale', 'Credit Note'].includes(type)) {
-        dr.value = 0; dr.disabled = true;
-    }
+  const type = e.target.value;
+  const dr = document.getElementById('entry-debit');
+  const cr = document.getElementById('entry-credit');
+  dr.disabled = false; cr.disabled = false;
+  dr.value = ''; cr.value = '';
+  if (['Payment', 'Purchase', 'Debit Note'].includes(type)) {
+    cr.disabled = true;
+  } else if (['Receipt', 'Sale', 'Credit Note'].includes(type)) {
+    dr.disabled = true;
+  }
 });
 
 // Mutual Exclusion for Debit/Credit
@@ -1258,12 +1379,14 @@ function addToStagingList() {
   stagingList.push({ date: fmtDate, particulars: particulars.toUpperCase(), vchType, vchNo, debit, credit });
   renderStagingList();
 
-  // Clear form fields (keep date for convenience)
+  // Clear form fields (keep date for convenience), reset disabled state
   document.getElementById('entry-particulars').value = '';
   document.getElementById('entry-vchtype').value = '';
   document.getElementById('entry-vchno').value = '';
   document.getElementById('entry-debit').value = '';
   document.getElementById('entry-credit').value = '';
+  document.getElementById('entry-debit').disabled = false;
+  document.getElementById('entry-credit').disabled = false;
   document.getElementById('entry-particulars').focus();
   showToast(`Row ${stagingList.length} added to list`, 'success');
 }
@@ -1475,31 +1598,15 @@ function renderSettings() {
   });
   html += `<button class="settings-add-btn" onclick="openModal('modal-add-company')" style="margin-top:4px; width:100%">+ Add Company</button>`;
   html += `<div style="margin-top:20px; padding:14px; background:var(--white); border-radius:var(--radius); border:1px solid var(--border);">
-    <div style="font-size:12px; font-weight:600; color:var(--text-mid); margin-bottom:8px;">DRIVE ACCOUNT</div>
-    <button class="btn-secondary" onclick="handleAuthClick()" style="margin-top:0">Re-connect Google Drive</button>
+    <div style="font-size:12px; font-weight:600; color:var(--text-mid); margin-bottom:4px;">COMPANY MASTER (Google Drive)</div>
+    <div style="font-size:11px; color:var(--text-light); margin-bottom:10px;">Stored in: Manage Accounts / Company Master (Google Sheet)<br>Changes here sync automatically to the sheet.</div>
+    <button class="btn-secondary" onclick="loadCompanyMasterFromSheet()" style="margin-top:0; margin-bottom:8px;">🔄 Reload from Google Sheet</button>
+    <button class="btn-secondary" onclick="handleAuthClick()" style="margin-top:0">🔗 Re-connect Google Drive</button>
   </div>`;
   content.innerHTML = html;
 }
 
-  // Lock fields based on Type
-document.getElementById('entry-vchtype').addEventListener('change', (e) => {
-    const dr = document.getElementById('entry-debit');
-    const cr = document.getElementById('entry-credit');
-    dr.disabled = false; cr.disabled = false;
-    if (['Payment', 'Purchase', 'Debit Note'].includes(e.target.value)) {
-        cr.value = 0; cr.disabled = true;
-    } else if (['Receipt', 'Sale', 'Credit Note'].includes(e.target.value)) {
-        dr.value = 0; dr.disabled = true;
-    }
-});
-
-// Mutual Exclusion
-document.getElementById('entry-debit').addEventListener('input', () => {
-    if(document.getElementById('entry-debit').value > 0) document.getElementById('entry-credit').value = 0;
-});
-document.getElementById('entry-credit').addEventListener('input', () => {
-    if(document.getElementById('entry-credit').value > 0) document.getElementById('entry-debit').value = 0;
-});
+  // Lock fields based on Type — single listener only
 
 let addPartyTargetIdx = null;
 function openAddPartyModal(companyIdx) {
@@ -1510,27 +1617,37 @@ function openAddPartyModal(companyIdx) {
 }
 
 function addParty() {
-  const name = document.getElementById('new-party-name').value.trim().toUpperCase();
+  const nameInput = document.getElementById('new-party-name');
+  const name = nameInput.value.trim().toUpperCase();
   if (!name) { showToast('Enter a party name', 'error'); return; }
-  CONFIG.companies[addPartyTargetIdx].parties.push(name);
+  const co = CONFIG.companies[addPartyTargetIdx];
+  if (co.parties.includes(name)) { showToast('Party already exists in this company', 'error'); return; }
+  co.parties.push(name);
   saveConfig();
+  nameInput.value = '';
   closeModal('modal-add-party');
   renderSettings();
   renderCompanyList();
   showToast('Party added ✓', 'success');
+  if (driveConnected) syncCompanyMasterToSheet();
 }
 
 function addCompany() {
-  const name = document.getElementById('new-company-name').value.trim().toUpperCase();
+  const nameInput = document.getElementById('new-company-name');
+  const name = nameInput.value.trim().toUpperCase();
   if (!name) { showToast('Enter a company name', 'error'); return; }
+  if (CONFIG.companies.find(c => c.name === name)) { showToast('Company already exists', 'error'); return; }
   const id = name.toLowerCase().replace(/\s+/g, '_');
   const short = name.split(' ').map(w => w[0]).join('').slice(0, 2);
   CONFIG.companies.push({ id, name, short, parties: [] });
   saveConfig();
+  nameInput.value = ''; // FIX: clear field after add
   closeModal('modal-add-company');
   renderSettings();
   renderCompanyList();
   showToast('Company added ✓', 'success');
+  // Sync to Drive sheet if connected
+  if (driveConnected) syncCompanyMasterToSheet();
 }
 
 function deleteCompany(idx) {
@@ -1540,6 +1657,7 @@ function deleteCompany(idx) {
   renderSettings();
   renderCompanyList();
   showToast('Company removed', 'success');
+  if (driveConnected) syncCompanyMasterToSheet();
 }
 
 function deleteParty(companyIdx, partyIdx) {
@@ -1549,6 +1667,7 @@ function deleteParty(companyIdx, partyIdx) {
   saveConfig();
   renderSettings();
   showToast('Party removed', 'success');
+  if (driveConnected) syncCompanyMasterToSheet();
 }
 
 // ── COMPANY LIST RENDER ──────────────────────────────
