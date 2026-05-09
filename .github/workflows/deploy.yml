@@ -1,0 +1,22 @@
+name: Inject Keys and Deploy
+on:
+  push:
+    branches: [ main ] # This runs every time you push code to 'main'
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Inject Secrets into index.html
+        run: |
+          # This replaces the placeholder text with your real secrets
+          sed -i "s/YOUR_API_KEY_PLACEHOLDER/${{ secrets.GOOGLE_API_KEY }}/g" index.html
+          sed -i "s/YOUR_CLIENT_ID_PLACEHOLDER/${{ secrets.GOOGLE_CLIENT_ID }}/g" index.html
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./
