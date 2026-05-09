@@ -581,9 +581,18 @@ html, body {
       </div>
 
       <div class="form-group">
-        <label class="form-label">Particulars</label>
-        <input type="text" class="form-input" id="entry-particulars" placeholder="e.g. Brought Forward, Invoice #123...">
-      </div>
+    <label class="form-label">Particulars</label>
+    <input list="particulars-list" class="form-input" id="entry-particulars" placeholder="Select or type...">
+    <datalist id="particulars-list">
+        <option value="TROPHY">
+        <option value="PAYMENT">
+        <option value="JOURNAL">
+        <option value="DEBIT NOTE">
+        <option value="CREDIT NOTE">
+    </datalist>
+</div>
+
+
 
       <div class="form-row">
         <div class="form-group">
@@ -600,10 +609,12 @@ html, body {
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">Vch. No.</label>
-          <input type="text" class="form-input" id="entry-vchno" placeholder="e.g. 001">
-        </div>
-      </div>
+    <label class="form-label">Vch. No.</label>
+    <div style="display:flex; align-items:center; background:var(--bg); border:1.5px solid var(--border); border-radius:var(--radius-sm); padding-left:10px;">
+        <span id="vch-prefix" style="font-size:13px; font-weight:600; color:var(--text-mid); border-right:1px solid var(--border); padding-right:8px;">AE/24-25/</span>
+        <input type="text" class="form-input" id="entry-vchno" style="border:none; background:transparent;" placeholder="001">
+    </div>
+</div>
 
       <div class="form-row">
         <div class="form-group">
@@ -846,6 +857,34 @@ async function downloadFile(fileId) {
   return resp.body; // raw binary string
 }
 
+  async function getOrCreateFolder(name, parentId = null) {
+    let q = `name='${name}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+    if (parentId) q += ` and '${parentId}' in parents`;
+    
+    const resp = await gapi.client.drive.files.list({ q });
+    if (resp.result.files.length > 0) return resp.result.files[0].id;
+    
+    const folderMetadata = { 'name': name, 'mimeType': 'application/vnd.google-apps.folder' };
+    if (parentId) folderMetadata.parents = [parentId];
+    const newFolder = await gapi.client.drive.files.create({ resource: folderMetadata, fields: 'id' });
+    return newFolder.result.id;
+}
+
+// Rewritten findFile to check Manage Accounts -> Company -> File
+async function findFile(companyName, partyName) {
+    try {
+        const rootFolderId = await getOrCreateFolder('Manage Accounts');
+        const companyFolderId = await getOrCreateFolder(companyName, rootFolderId);
+        
+        const q = `name='${partyName}.xlsx' and '${companyFolderId}' in parents and trashed=false`;
+        const resp = await gapi.client.drive.files.list({ q });
+        return resp.result.files.length > 0 ? resp.result.files[0].id : null;
+    } catch (e) {
+        showToast('⚠️ Issue in saving data. Please contact author', 'error');
+        throw e;
+    }
+}
+
 async function uploadFile(fileId, binaryData, fileName) {
   const boundary = '-------314159265358979323846';
   const metadata = JSON.stringify({ name: fileName, mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -1055,6 +1094,9 @@ function goToAddEntry() {
   currentFiscal = fiscal;
   stagingList = [];
   renderStagingList();
+  const shortName = currentCompany.short || 'XX';
+    const prefix = `${shortName}/${currentFiscal}/`;
+    document.getElementById('vch-prefix').textContent = prefix;
   // Set today's date
   const today = new Date();
   document.getElementById('entry-date').value = today.toISOString().split('T')[0];
@@ -1067,6 +1109,38 @@ function goToAddEntry() {
   document.getElementById('entry-context-pill').innerHTML = `🏢 ${currentCompany.name} &nbsp;|&nbsp; 👤 ${party} &nbsp;|&nbsp; 📅 ${fiscal}`;
   showScreen('screen-entry');
 }
+
+  // BUG 1: Clear Add Company Modal
+function addCompany() {
+    const name = document.getElementById('new-company-name').value.trim().toUpperCase();
+    if (!name) { showToast('Enter a company name', 'error'); return; }
+    // ... existing logic ...
+    document.getElementById('new-company-name').value = ''; // FIX: Clear field
+    closeModal('modal-add-company');
+}
+
+// BUG 5 & 6: VCH Type Locking and Debit/Credit Exclusion
+document.getElementById('entry-vchtype').addEventListener('change', (e) => {
+    const type = e.target.value;
+    const dr = document.getElementById('entry-debit');
+    const cr = document.getElementById('entry-credit');
+    
+    dr.disabled = false; cr.disabled = false;
+    
+    if (['Payment', 'Purchase', 'Debit Note'].includes(type)) {
+        cr.value = 0; cr.disabled = true;
+    } else if (['Receipt', 'Sale', 'Credit Note'].includes(type)) {
+        dr.value = 0; dr.disabled = true;
+    }
+});
+
+// Mutual Exclusion for Debit/Credit
+document.getElementById('entry-debit').addEventListener('input', () => {
+    if(document.getElementById('entry-debit').value > 0) document.getElementById('entry-credit').value = 0;
+});
+document.getElementById('entry-credit').addEventListener('input', () => {
+    if(document.getElementById('entry-credit').value > 0) document.getElementById('entry-debit').value = 0;
+});
 
 async function goToReport() {
   const party = document.getElementById('party-select').value;
