@@ -1,0 +1,1519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Accounts">
+<meta name="theme-color" content="#1B3A5C">
+<title>Accounts Manager</title>
+
+<!-- Fonts -->
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&family=DM+Serif+Display&display=swap" rel="stylesheet">
+
+<!-- Libraries -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --navy: #1B3A5C;
+  --navy-light: #2A5080;
+  --navy-pale: #E8EFF7;
+  --gold: #C9A84C;
+  --gold-light: #F5E9C8;
+  --text: #1a1a2e;
+  --text-mid: #4a5568;
+  --text-light: #8a96a8;
+  --bg: #F4F6FA;
+  --white: #ffffff;
+  --border: #D8E0EC;
+  --success: #1a7a4a;
+  --success-bg: #e6f7ef;
+  --danger: #c0392b;
+  --danger-bg: #fdecea;
+  --radius: 14px;
+  --radius-sm: 8px;
+  --shadow: 0 2px 12px rgba(27,58,92,0.10);
+  --shadow-lg: 0 8px 32px rgba(27,58,92,0.16);
+}
+
+html, body {
+  height: 100%;
+  font-family: 'DM Sans', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+/* ── APP SHELL ── */
+#app { min-height: 100vh; display: flex; flex-direction: column; }
+
+/* ── TOP BAR ── */
+.topbar {
+  background: var(--navy);
+  color: white;
+  padding: 14px 18px 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: var(--shadow);
+}
+.topbar-back {
+  background: rgba(255,255,255,0.12);
+  border: none;
+  border-radius: 8px;
+  color: white;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+.topbar-back:active { background: rgba(255,255,255,0.22); }
+.topbar-title { font-size: 15px; font-weight: 600; letter-spacing: 0.01em; flex: 1; }
+.topbar-sub { font-size: 11px; opacity: 0.7; font-weight: 400; }
+.topbar-icon {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 22px;
+  cursor: pointer;
+  padding: 4px;
+  opacity: 0.8;
+}
+.topbar-icon:active { opacity: 1; }
+
+/* ── CONTENT ── */
+.content { flex: 1; padding: 16px; max-width: 480px; margin: 0 auto; width: 100%; }
+
+/* ── SCREENS ── */
+.screen { display: none; animation: fadeIn 0.22s ease; }
+.screen.active { display: block; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ── HOME HEADER ── */
+.home-header {
+  background: var(--navy);
+  color: white;
+  padding: 28px 18px 22px;
+  text-align: center;
+}
+.home-logo {
+  font-family: 'DM Serif Display', serif;
+  font-size: 22px;
+  letter-spacing: 0.02em;
+  margin-bottom: 4px;
+}
+.home-tagline { font-size: 12px; opacity: 0.65; font-weight: 300; }
+.home-gapi-status {
+  margin-top: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255,255,255,0.1);
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-size: 11px;
+}
+.status-dot { width: 7px; height: 7px; border-radius: 50%; background: #f59e0b; }
+.status-dot.connected { background: #34d399; }
+
+/* ── COMPANY CARDS ── */
+.section-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-light);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin: 20px 0 10px;
+}
+.company-card {
+  background: var(--white);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.company-card:active { border-color: var(--navy); box-shadow: var(--shadow); }
+.company-avatar {
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  background: var(--navy-pale);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--navy);
+  flex-shrink: 0;
+  letter-spacing: 0.03em;
+}
+.company-card:nth-child(2) .company-avatar { background: #EEF5E8; color: #2d6a27; }
+.company-card:nth-child(3) .company-avatar { background: #FBF0E6; color: #8a4a1a; }
+.company-info { flex: 1; min-width: 0; }
+.company-name { font-size: 14px; font-weight: 600; color: var(--text); }
+.company-meta { font-size: 12px; color: var(--text-light); margin-top: 2px; }
+.company-arrow { color: var(--text-light); font-size: 18px; }
+
+/* ── SELECTION SCREEN ── */
+.selection-card {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px;
+  margin-bottom: 14px;
+}
+.selection-card h3 { font-size: 13px; font-weight: 600; color: var(--text-mid); margin-bottom: 10px; }
+
+.form-select, .form-input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-family: 'DM Sans', sans-serif;
+  color: var(--text);
+  background: var(--bg);
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238a96a8' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  cursor: pointer;
+}
+.form-input {
+  background-image: none;
+  background: var(--white);
+  border-color: var(--border);
+}
+.form-select:focus, .form-input:focus {
+  outline: none;
+  border-color: var(--navy);
+  background: var(--white);
+}
+
+/* ── ACTION BUTTONS ── */
+.action-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 18px; }
+.action-btn {
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 10px;
+  text-align: center;
+  cursor: pointer;
+  background: var(--white);
+  -webkit-tap-highlight-color: transparent;
+  transition: all 0.15s;
+}
+.action-btn:active { transform: scale(0.97); }
+.action-btn.primary { background: var(--navy); border-color: var(--navy); }
+.action-btn .ab-icon { font-size: 28px; margin-bottom: 8px; }
+.action-btn .ab-label { font-size: 13px; font-weight: 600; color: var(--text); }
+.action-btn.primary .ab-label { color: white; }
+.action-btn .ab-sub { font-size: 11px; color: var(--text-light); margin-top: 3px; }
+.action-btn.primary .ab-sub { color: rgba(255,255,255,0.65); }
+
+/* ── FORM ── */
+.form-group { margin-bottom: 14px; }
+.form-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-mid);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+.btn-primary {
+  width: 100%;
+  padding: 15px;
+  background: var(--navy);
+  color: white;
+  border: none;
+  border-radius: var(--radius);
+  font-size: 15px;
+  font-weight: 600;
+  font-family: 'DM Sans', sans-serif;
+  cursor: pointer;
+  margin-top: 8px;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s;
+}
+.btn-primary:active { background: var(--navy-light); }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-secondary {
+  width: 100%;
+  padding: 13px;
+  background: transparent;
+  color: var(--navy);
+  border: 1.5px solid var(--navy);
+  border-radius: var(--radius);
+  font-size: 14px;
+  font-weight: 600;
+  font-family: 'DM Sans', sans-serif;
+  cursor: pointer;
+  margin-top: 8px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ── REPORT TABLE ── */
+.report-header-card {
+  background: var(--navy);
+  color: white;
+  border-radius: var(--radius);
+  padding: 16px;
+  text-align: center;
+  margin-bottom: 14px;
+}
+.report-company { font-family: 'DM Serif Display', serif; font-size: 17px; margin-bottom: 4px; }
+.report-party { font-size: 13px; font-weight: 600; opacity: 0.85; }
+.report-period { font-size: 11px; opacity: 0.65; margin-top: 4px; }
+
+.report-table-wrap { overflow-x: auto; background: var(--white); border-radius: var(--radius); border: 1px solid var(--border); }
+.report-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 420px; }
+.report-table th {
+  background: var(--navy-pale);
+  color: var(--navy);
+  font-weight: 600;
+  padding: 10px 8px;
+  text-align: left;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--border);
+}
+.report-table td {
+  padding: 9px 8px;
+  border-bottom: 0.5px solid var(--border);
+  color: var(--text);
+  vertical-align: top;
+}
+.report-table tr:last-child td { border-bottom: none; }
+.report-table .amount { text-align: right; font-variant-numeric: tabular-nums; }
+.report-table .total-row td {
+  font-weight: 700;
+  background: var(--navy-pale);
+  color: var(--navy);
+  border-top: 1.5px solid var(--navy);
+}
+.report-table .balance-row td {
+  font-weight: 700;
+  background: var(--gold-light);
+  color: #7a5c1a;
+}
+
+.summary-card {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 10px;
+  text-align: center;
+}
+.summary-item { }
+.summary-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-light); font-weight: 600; margin-bottom: 4px; }
+.summary-value { font-size: 16px; font-weight: 700; color: var(--navy); }
+.summary-value.credit { color: var(--success); }
+.summary-value.balance { color: var(--gold); }
+
+/* ── TOAST ── */
+#toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(80px);
+  background: var(--text);
+  color: white;
+  padding: 11px 22px;
+  border-radius: 24px;
+  font-size: 13px;
+  font-weight: 500;
+  z-index: 999;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  white-space: nowrap;
+  max-width: 90vw;
+}
+#toast.show { transform: translateX(-50%) translateY(0); }
+#toast.success { background: var(--success); }
+#toast.error { background: var(--danger); }
+
+/* ── LOADER ── */
+#loader {
+  position: fixed; inset: 0;
+  background: rgba(255,255,255,0.82);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 500;
+  display: none;
+}
+.spinner {
+  width: 38px; height: 38px;
+  border: 3px solid var(--navy-pale);
+  border-top-color: var(--navy);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── SETTINGS ── */
+.settings-group { background: var(--white); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-bottom: 16px; }
+.settings-row {
+  padding: 14px 16px;
+  border-bottom: 0.5px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 14px;
+  cursor: pointer;
+}
+.settings-row:last-child { border-bottom: none; }
+.settings-row:active { background: var(--bg); }
+.settings-row-label { font-weight: 500; }
+.settings-row-sub { font-size: 11px; color: var(--text-light); margin-top: 2px; }
+.settings-add-btn {
+  background: var(--navy-pale);
+  color: var(--navy);
+  border: 1.5px dashed var(--navy);
+  border-radius: var(--radius-sm);
+  padding: 11px;
+  width: 100%;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: 'DM Sans', sans-serif;
+  cursor: pointer;
+  margin-top: 8px;
+}
+
+/* ── MODAL ── */
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(10,20,40,0.5);
+  display: flex;
+  align-items: flex-end;
+  z-index: 200;
+  display: none;
+}
+.modal-overlay.open { display: flex; }
+.modal-sheet {
+  background: var(--white);
+  border-radius: 20px 20px 0 0;
+  padding: 20px 18px 32px;
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  animation: slideUp 0.25s ease;
+}
+@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+.modal-title { font-size: 16px; font-weight: 700; margin-bottom: 16px; }
+.modal-handle { width: 36px; height: 4px; background: var(--border); border-radius: 2px; margin: 0 auto 16px; }
+
+/* ── CONTEXT PILL ── */
+.context-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--navy-pale);
+  color: var(--navy);
+  border-radius: 20px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+
+/* ── EMPTY STATE ── */
+.empty-state {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-light);
+}
+.empty-icon { font-size: 40px; margin-bottom: 10px; }
+.empty-text { font-size: 14px; }
+
+/* ── DRIVE AUTH ── */
+.drive-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: var(--white);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  width: 100%;
+  font-family: 'DM Sans', sans-serif;
+  margin-top: 16px;
+  color: var(--text);
+}
+.drive-btn:active { background: var(--bg); }
+</style>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- LOADER -->
+  <div id="loader"><div class="spinner"></div></div>
+
+  <!-- TOAST -->
+  <div id="toast"></div>
+
+  <!-- ════════════════════════════════
+       SCREEN 0: HOME / COMPANY SELECT
+       ════════════════════════════════ -->
+  <div id="screen-home" class="screen active">
+    <div class="home-header">
+      <div class="home-logo">📒 Accounts Manager</div>
+      <div class="home-tagline">TANMAY TROPHY MFG. CO.</div>
+      <div class="home-gapi-status">
+        <div class="status-dot" id="drive-status-dot"></div>
+        <span id="drive-status-text">Google Drive: Not connected</span>
+      </div>
+    </div>
+
+    <div class="content">
+      <!-- Drive connect -->
+      <div id="drive-connect-section">
+        <button class="drive-btn" onclick="handleAuthClick()">
+          <svg width="20" height="20" viewBox="0 0 87.3 78" xmlns="http://www.w3.org/2000/svg"><path d="M6.6 66.85l3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/><path d="M43.65 25L29.9 1.2C28.55 2 27.4 3.1 26.6 4.5l-19.95 34.5A9.14 9.14 0 0 0 5.45 43.5h27.5z" fill="#00ac47"/><path d="M73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.5l5.85 11.5z" fill="#ea4335"/><path d="M43.65 25l13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d"/><path d="M59.8 43.5h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc"/><path d="M73.4 26.5l-9.95-17.25c-.8-1.4-1.95-2.5-3.3-3.3L46.4 29.7l13.4 23.2h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/></svg>
+          Connect to Google Drive
+        </button>
+      </div>
+
+      <div class="section-label">Select Company</div>
+
+      <div id="company-list">
+        <!-- Generated by JS -->
+      </div>
+
+      <div style="margin-top: 8px; text-align: center;">
+        <button class="btn-secondary" style="width: auto; padding: 8px 20px; font-size: 12px;" onclick="showSettings()">⚙️ Settings</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════
+       SCREEN 1: SELECT PARTY + FISCAL
+       ════════════════════════════════ -->
+  <div id="screen-select" class="screen">
+    <div class="topbar">
+      <button class="topbar-back" onclick="goBack('screen-home')">←</button>
+      <div>
+        <div class="topbar-title" id="select-company-title">Company</div>
+        <div class="topbar-sub">Select party & fiscal year</div>
+      </div>
+    </div>
+
+    <div class="content">
+      <div class="selection-card">
+        <h3>Party Name</h3>
+        <select class="form-select" id="party-select">
+          <option value="">— Select Party —</option>
+        </select>
+      </div>
+
+      <div class="selection-card">
+        <h3>Fiscal Year</h3>
+        <select class="form-select" id="fiscal-select">
+          <!-- Generated by JS -->
+        </select>
+      </div>
+
+      <div class="action-row">
+        <div class="action-btn primary" onclick="goToAddEntry()">
+          <div class="ab-icon">➕</div>
+          <div class="ab-label">Add Entry</div>
+          <div class="ab-sub">Record transaction</div>
+        </div>
+        <div class="action-btn" onclick="goToReport()">
+          <div class="ab-icon" style="color:var(--navy)">📄</div>
+          <div class="ab-label">Report / PDF</div>
+          <div class="ab-sub">View & download</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════
+       SCREEN 2: ADD ENTRY FORM
+       ════════════════════════════════ -->
+  <div id="screen-entry" class="screen">
+    <div class="topbar">
+      <button class="topbar-back" onclick="goBack('screen-select')">←</button>
+      <div>
+        <div class="topbar-title">Add Entry</div>
+        <div class="topbar-sub" id="entry-context-sub"></div>
+      </div>
+    </div>
+
+    <div class="content">
+      <div class="context-pill" id="entry-context-pill"></div>
+
+      <div class="form-group">
+        <label class="form-label">Date</label>
+        <input type="date" class="form-input" id="entry-date">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Particulars</label>
+        <input type="text" class="form-input" id="entry-particulars" placeholder="e.g. Brought Forward, Invoice #123...">
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Vch. Type</label>
+          <select class="form-select" id="entry-vchtype">
+            <option value="">— Select —</option>
+            <option>Sale</option>
+            <option>Purchase</option>
+            <option>Receipt</option>
+            <option>Payment</option>
+            <option>Journal</option>
+            <option>Credit Note</option>
+            <option>Debit Note</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Vch. No.</label>
+          <input type="text" class="form-input" id="entry-vchno" placeholder="e.g. 001">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Debit (₹)</label>
+          <input type="number" class="form-input" id="entry-debit" placeholder="0" min="0" step="0.01">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Credit (₹)</label>
+          <input type="number" class="form-input" id="entry-credit" placeholder="0" min="0" step="0.01">
+        </div>
+      </div>
+
+      <button class="btn-primary" onclick="addToStagingList()" id="add-to-list-btn">➕ Add to List</button>
+
+      <!-- ── STAGING LIST ── -->
+      <div id="staging-section" style="display:none; margin-top: 20px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+          <div class="section-label" style="margin:0;">Entries to save <span id="staging-count" style="background:var(--navy);color:white;border-radius:10px;padding:1px 8px;font-size:11px;margin-left:6px;">0</span></div>
+          <button onclick="clearStagingList()" style="background:none;border:none;color:var(--danger);font-size:12px;font-weight:600;cursor:pointer;">✕ Clear all</button>
+        </div>
+        <div id="staging-table-wrap" style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);overflow-x:auto;">
+          <table id="staging-table" style="width:100%;border-collapse:collapse;font-size:12px;min-width:380px;">
+            <thead>
+              <tr style="background:var(--navy-pale);">
+                <th style="padding:8px 7px;text-align:left;color:var(--navy);font-size:10px;font-weight:700;letter-spacing:0.05em;border-bottom:1px solid var(--border);">DATE</th>
+                <th style="padding:8px 7px;text-align:left;color:var(--navy);font-size:10px;font-weight:700;letter-spacing:0.05em;border-bottom:1px solid var(--border);">PARTICULARS</th>
+                <th style="padding:8px 7px;text-align:left;color:var(--navy);font-size:10px;font-weight:700;letter-spacing:0.05em;border-bottom:1px solid var(--border);">TYPE</th>
+                <th style="padding:8px 7px;text-align:right;color:var(--navy);font-size:10px;font-weight:700;letter-spacing:0.05em;border-bottom:1px solid var(--border);">DEBIT</th>
+                <th style="padding:8px 7px;text-align:right;color:var(--navy);font-size:10px;font-weight:700;letter-spacing:0.05em;border-bottom:1px solid var(--border);">CREDIT</th>
+                <th style="padding:8px 7px;border-bottom:1px solid var(--border);"></th>
+              </tr>
+            </thead>
+            <tbody id="staging-tbody"></tbody>
+          </table>
+        </div>
+        <!-- Running totals -->
+        <div id="staging-totals" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;"></div>
+
+        <button class="btn-primary" onclick="saveAllEntries()" id="save-all-btn" style="margin-top:12px;">💾 Save All to Excel (Google Drive)</button>
+      </div>
+
+      <button class="btn-secondary" onclick="confirmCancelEntry()" style="margin-top:10px; margin-bottom:24px;">Cancel</button>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════
+       SCREEN 3: REPORT / PDF
+       ════════════════════════════════ -->
+  <div id="screen-report" class="screen">
+    <div class="topbar">
+      <button class="topbar-back" onclick="goBack('screen-select')">←</button>
+      <div>
+        <div class="topbar-title">Report</div>
+        <div class="topbar-sub" id="report-context-sub"></div>
+      </div>
+    </div>
+
+    <div class="content">
+      <div class="report-header-card">
+        <div class="report-company">TANMAY TROPHY MFG. CO.</div>
+        <div class="report-party" id="rpt-party-name">— ACCOUNT</div>
+        <div class="report-period" id="rpt-period"></div>
+      </div>
+
+      <div id="report-body">
+        <!-- Rendered by JS -->
+      </div>
+
+      <button class="btn-primary" onclick="generatePDF()" style="margin-top: 14px;">🖨️ Download PDF</button>
+      <button class="btn-secondary" onclick="goBack('screen-select')" style="margin-bottom: 24px;">Back</button>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════
+       SCREEN 4: SETTINGS (password protected)
+       ════════════════════════════════ -->
+  <div id="screen-settings" class="screen">
+    <div class="topbar">
+      <button class="topbar-back" onclick="goBack('screen-home')">←</button>
+      <div>
+        <div class="topbar-title">Settings</div>
+        <div class="topbar-sub">Admin only</div>
+      </div>
+    </div>
+    <div class="content" id="settings-content">
+      <!-- Rendered by JS -->
+    </div>
+  </div>
+
+</div>
+
+<!-- ════════ MODALS ════════ -->
+
+<!-- Password Modal -->
+<div class="modal-overlay" id="modal-password">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-title">🔐 Admin Access</div>
+    <div class="form-group">
+      <label class="form-label">Password</label>
+      <input type="password" class="form-input" id="settings-password" placeholder="Enter password" onkeydown="if(event.key==='Enter')checkSettingsPassword()">
+    </div>
+    <button class="btn-primary" onclick="checkSettingsPassword()">Unlock Settings</button>
+    <button class="btn-secondary" onclick="closeModal('modal-password')">Cancel</button>
+  </div>
+</div>
+
+<!-- Add Company Modal -->
+<div class="modal-overlay" id="modal-add-company">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Add Company</div>
+    <div class="form-group">
+      <label class="form-label">Company Name</label>
+      <input type="text" class="form-input" id="new-company-name" placeholder="e.g. MEDICOS SURGICALS">
+    </div>
+    <button class="btn-primary" onclick="addCompany()">Add Company</button>
+    <button class="btn-secondary" onclick="closeModal('modal-add-company')">Cancel</button>
+  </div>
+</div>
+
+<!-- Add Party Modal -->
+<div class="modal-overlay" id="modal-add-party">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Add Party to <span id="add-party-company-name"></span></div>
+    <div class="form-group">
+      <label class="form-label">Party Name</label>
+      <input type="text" class="form-input" id="new-party-name" placeholder="e.g. CARE HOSPITAL">
+    </div>
+    <button class="btn-primary" onclick="addParty()">Add Party</button>
+    <button class="btn-secondary" onclick="closeModal('modal-add-party')">Cancel</button>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════
+     JAVASCRIPT
+     ════════════════════════════════════════════════ -->
+<script>
+// ── CONFIG ──────────────────────────────────────────
+const SETTINGS_PASSWORD = 'tanmay2025';
+const CLIENT_ID = 'YOUR_GOOGLE_CLIENT_ID'; // Replace with your Google OAuth Client ID
+const API_KEY   = 'YOUR_GOOGLE_API_KEY';   // Replace with your Google API Key
+const SCOPES    = 'https://www.googleapis.com/auth/drive';
+
+// Company + Party data (saved to localStorage so settings persist)
+let CONFIG = JSON.parse(localStorage.getItem('accounts_config') || 'null') || {
+  companies: [
+    {
+      id: 'medicos_surgicals',
+      name: 'MEDICOS SURGICALS',
+      short: 'MS',
+      parties: ['CARE HOSPITAL','SYNERGY HOSPITAL','LIFEGIVING HOSPITAL','NEW CITY HOSPITAL','CHIRAYU HOSPITAL']
+    },
+    {
+      id: 'medicos_electronics',
+      name: 'MEDICOS ELECTRONICS',
+      short: 'ME',
+      parties: ['CARE HOSPITAL','SYNERGY HOSPITAL','LIFEGIVING HOSPITAL']
+    },
+    {
+      id: 'spark_international',
+      name: 'SPARK INTERNATIONAL',
+      short: 'SI',
+      parties: ['SPARK CREATIONS','SILVER TOUCH']
+    }
+  ]
+};
+saveConfig();
+
+function saveConfig() {
+  localStorage.setItem('accounts_config', JSON.stringify(CONFIG));
+}
+
+// Fiscal years: India FY Apr–Mar
+function generateFiscalYears() {
+  const years = [];
+  const now = new Date();
+  const curMonth = now.getMonth(); // 0=Jan
+  // current FY start year
+  let startYear = curMonth >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+  for (let i = 0; i < 5; i++) {
+    const y1 = startYear - i;
+    const y2 = (y1 + 1).toString().slice(2);
+    years.push(`${y1}-${y2}`);
+  }
+  return years;
+}
+
+// ── STATE ──────────────────────────────────────────
+let currentCompany = null;
+let currentParty   = null;
+let currentFiscal  = null;
+let driveConnected = false;
+let tokenClient    = null;
+let accessToken    = null;
+let settingsUnlocked = false;
+let reportRows     = [];
+
+// ── GOOGLE DRIVE API ────────────────────────────────
+function initGapi() {
+  gapi.load('client', async () => {
+    await gapi.client.init({ apiKey: API_KEY, discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'] });
+    tokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: CLIENT_ID,
+      scope: SCOPES,
+      callback: (resp) => {
+        if (resp.error) { showToast('Drive auth failed: ' + resp.error, 'error'); return; }
+        accessToken = resp.access_token;
+        driveConnected = true;
+        updateDriveStatus(true);
+        document.getElementById('drive-connect-section').style.display = 'none';
+        showToast('Google Drive connected ✓', 'success');
+      }
+    });
+    // Auto-prompt if token exists
+    if (gapi.client.getToken()) {
+      accessToken = gapi.client.getToken().access_token;
+      driveConnected = true;
+      updateDriveStatus(true);
+    }
+  });
+}
+
+function handleAuthClick() {
+  if (!tokenClient) { showToast('Google API not loaded yet', 'error'); return; }
+  tokenClient.requestAccessToken({ prompt: '' });
+}
+
+function updateDriveStatus(connected) {
+  document.getElementById('drive-status-dot').className = 'status-dot' + (connected ? ' connected' : '');
+  document.getElementById('drive-status-text').textContent = connected ? 'Google Drive: Connected ✓' : 'Google Drive: Not connected';
+  if (connected) document.getElementById('drive-connect-section').style.display = 'none';
+}
+
+// ── DRIVE FILE OPERATIONS ───────────────────────────
+async function findFile(companyName, partyName) {
+  // Search for file: CompanyName/PartyName.xlsx
+  const q = `name='${partyName}.xlsx' and mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' and trashed=false`;
+  const resp = await gapi.client.drive.files.list({ q, fields: 'files(id,name,parents)', spaces: 'drive' });
+  // Also verify it's inside the right company folder
+  const files = resp.result.files || [];
+  // If multiple matches (same party name in different companies), match by parent folder name
+  for (const f of files) {
+    const parentId = f.parents?.[0];
+    if (parentId) {
+      const folderResp = await gapi.client.drive.files.get({ fileId: parentId, fields: 'name' });
+      if (folderResp.result.name.toUpperCase() === companyName.toUpperCase()) return f.id;
+    }
+  }
+  return null;
+}
+
+async function downloadFile(fileId) {
+  const resp = await gapi.client.drive.files.get({ fileId, alt: 'media' });
+  return resp.body; // raw binary string
+}
+
+async function uploadFile(fileId, binaryData, fileName) {
+  const boundary = '-------314159265358979323846';
+  const metadata = JSON.stringify({ name: fileName, mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\r\nContent-Transfer-Encoding: base64\r\n\r\n${btoa(binaryData)}\r\n--${boundary}--`;
+  const method = fileId ? 'PATCH' : 'POST';
+  const path = fileId ? `/upload/drive/v3/files/${fileId}` : '/upload/drive/v3/files';
+  await gapi.client.request({ path, method, params: { uploadType: 'multipart' }, headers: { 'Content-Type': `multipart/related; boundary="${boundary}"` }, body });
+}
+
+// ── READ SHEET DATA ─────────────────────────────────
+async function loadSheetData(companyName, partyName, fiscal) {
+  if (!driveConnected) return getDemoData(partyName, fiscal);
+  showLoader(true);
+  try {
+    const fileId = await findFile(companyName, partyName);
+    if (!fileId) { showLoader(false); return []; }
+    const binary = await downloadFile(fileId);
+    const wb = XLSX.read(binary, { type: 'binary' });
+    if (!wb.SheetNames.includes(fiscal)) { showLoader(false); return []; }
+    const ws = wb.Sheets[fiscal];
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+    // Find data rows (skip header rows — look for row with DATE as first non-empty cell)
+    let dataStart = 0;
+    for (let i = 0; i < rows.length; i++) {
+      if (String(rows[i][0]).toUpperCase().includes('DATE')) { dataStart = i + 1; break; }
+    }
+    const data = [];
+    for (let i = dataStart; i < rows.length; i++) {
+      const r = rows[i];
+      if (!r[0] && !r[1]) continue;
+      const label = String(r[1]).toUpperCase();
+      if (label === 'TOTAL' || label === 'TOTAL BALANCE') continue;
+      data.push({ date: r[0], particulars: r[1], vchType: r[2], vchNo: r[3], debit: parseFloat(r[4]) || 0, credit: parseFloat(r[5]) || 0 });
+    }
+    showLoader(false);
+    return data;
+  } catch(e) { showLoader(false); console.error(e); return []; }
+}
+
+// ── APPEND ROW TO SHEET ──────────────────────────────
+async function appendRowToSheet(companyName, partyName, fiscal, rowData) {
+  if (!driveConnected) { showToast('Not connected to Drive. Entry saved locally only.', 'error'); return false; }
+  showLoader(true);
+  try {
+    const fileId = await findFile(companyName, partyName);
+    let wb;
+    if (fileId) {
+      const binary = await downloadFile(fileId);
+      wb = XLSX.read(binary, { type: 'binary' });
+    } else {
+      wb = XLSX.utils.book_new();
+    }
+
+    if (!wb.SheetNames.includes(fiscal)) {
+      // Create new sheet with headers
+      const headerRows = [
+        ['TANMAY TROPHY MFG. CO.'],
+        [partyName + ' ACCOUNT'],
+        ['(' + fiscalToDateRange(fiscal) + ')'],
+        ['DATE','PARTICULARS','VCH. TYPE','VCH. NO.','DEBIT','CREDIT']
+      ];
+      const ws = XLSX.utils.aoa_to_sheet(headerRows);
+      XLSX.utils.book_append_sheet(wb, ws, fiscal);
+    }
+
+    const ws = wb.Sheets[fiscal];
+    const existing = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+    // Find TOTAL row or end
+    let insertAt = existing.length;
+    for (let i = 0; i < existing.length; i++) {
+      if (String(existing[i][1]).toUpperCase() === 'TOTAL') { insertAt = i; break; }
+    }
+    // Rebuild rows
+    const newRow = [rowData.date, rowData.particulars, rowData.vchType, rowData.vchNo, rowData.debit || '', rowData.credit || ''];
+    const allRows = [...existing.slice(0, insertAt), newRow];
+    // Recalculate totals
+    let totalDebit = 0, totalCredit = 0;
+    for (let i = 4; i < allRows.length; i++) { // skip 4 header rows
+      totalDebit += parseFloat(allRows[i][4]) || 0;
+      totalCredit += parseFloat(allRows[i][5]) || 0;
+    }
+    allRows.push(['','TOTAL','','',totalDebit, totalCredit]);
+    allRows.push(['','TOTAL BALANCE','','', Math.abs(totalDebit - totalCredit), '']);
+
+    const newWs = XLSX.utils.aoa_to_sheet(allRows);
+    wb.Sheets[fiscal] = newWs;
+
+    const out = XLSX.write(wb, { type: 'binary', bookType: 'xlsx' });
+    await uploadFile(fileId, out, partyName + '.xlsx');
+    showLoader(false);
+    return true;
+  } catch(e) {
+    showLoader(false);
+    console.error(e);
+    showToast('Error saving: ' + e.message, 'error');
+    return false;
+  }
+}
+
+async function appendMultipleRowsToSheet(companyName, partyName, fiscal, rows) {
+  if (!driveConnected) { showToast('Not connected to Drive', 'error'); return false; }
+  showLoader(true);
+  try {
+    const fileId = await findFile(companyName, partyName);
+    let wb;
+    if (fileId) {
+      const binary = await downloadFile(fileId);
+      wb = XLSX.read(binary, { type: 'binary' });
+    } else {
+      wb = XLSX.utils.book_new();
+    }
+    if (!wb.SheetNames.includes(fiscal)) {
+      const headerRows = [
+        ['TANMAY TROPHY MFG. CO.'],
+        [partyName + ' ACCOUNT'],
+        ['(' + fiscalToDateRange(fiscal) + ')'],
+        ['DATE','PARTICULARS','VCH. TYPE','VCH. NO.','DEBIT','CREDIT']
+      ];
+      const ws = XLSX.utils.aoa_to_sheet(headerRows);
+      XLSX.utils.book_append_sheet(wb, ws, fiscal);
+    }
+    const ws = wb.Sheets[fiscal];
+    const existing = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+    let insertAt = existing.length;
+    for (let i = 0; i < existing.length; i++) {
+      if (String(existing[i][1]).toUpperCase() === 'TOTAL') { insertAt = i; break; }
+    }
+    const newRows = rows.map(r => [r.date, r.particulars, r.vchType, r.vchNo, r.debit || '', r.credit || '']);
+    const allRows = [...existing.slice(0, insertAt), ...newRows];
+    let totalDebit = 0, totalCredit = 0;
+    for (let i = 4; i < allRows.length; i++) {
+      totalDebit += parseFloat(allRows[i][4]) || 0;
+      totalCredit += parseFloat(allRows[i][5]) || 0;
+    }
+    allRows.push(['','TOTAL','','', totalDebit, totalCredit]);
+    allRows.push(['','TOTAL BALANCE','','', Math.abs(totalDebit - totalCredit), '']);
+    const newWs = XLSX.utils.aoa_to_sheet(allRows);
+    wb.Sheets[fiscal] = newWs;
+    const out = XLSX.write(wb, { type: 'binary', bookType: 'xlsx' });
+    await uploadFile(fileId, out, partyName + '.xlsx');
+    showLoader(false);
+    return true;
+  } catch(e) {
+    showLoader(false);
+    console.error(e);
+    showToast('Error saving: ' + e.message, 'error');
+    return false;
+  }
+}
+
+function fiscalToDateRange(fiscal) {
+  // "2024-25" → "01.04.2024 - 31.03.2025"
+  const parts = fiscal.split('-');
+  const y1 = parts[0];
+  const y2 = '20' + parts[1];
+  return `01.04.${y1} - 31.03.${y2}`;
+}
+
+// ── DEMO DATA (when Drive not connected) ────────────
+function getDemoData(partyName, fiscal) {
+  return [
+    { date: '01.01.23', particulars: 'Brought Forward', vchType: '', vchNo: '', debit: 684801, credit: 0 },
+    { date: '12.01.23', particulars: 'PAYMENT', vchType: 'Payment', vchNo: '', debit: 0, credit: 140918 },
+    { date: '01.03.23', particulars: 'PAYMENT', vchType: 'Payment', vchNo: '', debit: 0, credit: 250000 },
+    { date: '06.03.23', particulars: 'PAYMENT', vchType: 'Payment', vchNo: '', debit: 0, credit: 123884 },
+  ];
+}
+
+// ── NAVIGATION ──────────────────────────────────────
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  window.scrollTo(0,0);
+}
+
+function goBack(screen) { showScreen(screen); }
+
+function selectCompany(company) {
+  currentCompany = company;
+  document.getElementById('select-company-title').textContent = company.name;
+  // Populate party dropdown
+  const sel = document.getElementById('party-select');
+  sel.innerHTML = '<option value="">— Select Party —</option>';
+  company.parties.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p;
+    opt.textContent = p;
+    sel.appendChild(opt);
+  });
+  // Populate fiscal year
+  const fsel = document.getElementById('fiscal-select');
+  fsel.innerHTML = '';
+  generateFiscalYears().forEach(fy => {
+    const opt = document.createElement('option');
+    opt.value = fy;
+    opt.textContent = fy + '  (Apr–Mar)';
+    fsel.appendChild(opt);
+  });
+  showScreen('screen-select');
+}
+
+function goToAddEntry() {
+  const party = document.getElementById('party-select').value;
+  const fiscal = document.getElementById('fiscal-select').value;
+  if (!party) { showToast('Please select a party name', 'error'); return; }
+  currentParty = party;
+  currentFiscal = fiscal;
+  stagingList = [];
+  renderStagingList();
+  // Set today's date
+  const today = new Date();
+  document.getElementById('entry-date').value = today.toISOString().split('T')[0];
+  document.getElementById('entry-particulars').value = '';
+  document.getElementById('entry-vchtype').value = '';
+  document.getElementById('entry-vchno').value = '';
+  document.getElementById('entry-debit').value = '';
+  document.getElementById('entry-credit').value = '';
+  document.getElementById('entry-context-sub').textContent = `${currentCompany.name} · ${party} · ${fiscal}`;
+  document.getElementById('entry-context-pill').innerHTML = `🏢 ${currentCompany.name} &nbsp;|&nbsp; 👤 ${party} &nbsp;|&nbsp; 📅 ${fiscal}`;
+  showScreen('screen-entry');
+}
+
+async function goToReport() {
+  const party = document.getElementById('party-select').value;
+  const fiscal = document.getElementById('fiscal-select').value;
+  if (!party) { showToast('Please select a party name', 'error'); return; }
+  currentParty = party;
+  currentFiscal = fiscal;
+  document.getElementById('report-context-sub').textContent = `${currentCompany.name} · ${party} · ${fiscal}`;
+  document.getElementById('rpt-party-name').textContent = party + ' ACCOUNT';
+  document.getElementById('rpt-period').textContent = '( ' + fiscalToDateRange(fiscal) + ' )';
+  reportRows = await loadSheetData(currentCompany.name, party, fiscal);
+  renderReport(reportRows);
+  showScreen('screen-report');
+}
+
+// ── RENDER REPORT ────────────────────────────────────
+function fmtAmt(n) {
+  if (!n || n === 0) return '';
+  return new Intl.NumberFormat('en-IN').format(n);
+}
+
+function renderReport(rows) {
+  const body = document.getElementById('report-body');
+  if (!rows.length) {
+    body.innerHTML = `<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-text">No entries found for this party & fiscal year.<br>Add your first transaction!</div></div>`;
+    return;
+  }
+  let totalDebit = 0, totalCredit = 0;
+  rows.forEach(r => { totalDebit += r.debit || 0; totalCredit += r.credit || 0; });
+  const balance = Math.abs(totalDebit - totalCredit);
+  const balanceLabel = totalDebit > totalCredit ? 'Balance Due (Dr)' : 'Balance Cr';
+
+  let tableRows = rows.map(r => `
+    <tr>
+      <td>${r.date || ''}</td>
+      <td>${r.particulars || ''}</td>
+      <td>${r.vchType || ''}</td>
+      <td>${r.vchNo || ''}</td>
+      <td class="amount">${fmtAmt(r.debit)}</td>
+      <td class="amount">${fmtAmt(r.credit)}</td>
+    </tr>`).join('');
+
+  body.innerHTML = `
+    <div class="report-table-wrap">
+      <table class="report-table">
+        <thead>
+          <tr>
+            <th>Date</th><th>Particulars</th><th>Vch.Type</th><th>Vch.No.</th>
+            <th class="amount">Debit (₹)</th><th class="amount">Credit (₹)</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tableRows}
+          <tr class="total-row">
+            <td></td><td><strong>TOTAL</strong></td><td></td><td></td>
+            <td class="amount"><strong>${fmtAmt(totalDebit)}</strong></td>
+            <td class="amount"><strong>${fmtAmt(totalCredit)}</strong></td>
+          </tr>
+          <tr class="balance-row">
+            <td></td><td><strong>TOTAL BALANCE</strong></td><td></td><td></td>
+            <td class="amount" colspan="2"><strong>${fmtAmt(balance)}</strong></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="summary-card">
+      <div class="summary-item">
+        <div class="summary-label">Total Debit</div>
+        <div class="summary-value">₹${fmtAmt(totalDebit)}</div>
+      </div>
+      <div class="summary-item">
+        <div class="summary-label">Total Credit</div>
+        <div class="summary-value credit">₹${fmtAmt(totalCredit)}</div>
+      </div>
+      <div class="summary-item">
+        <div class="summary-label">${balanceLabel}</div>
+        <div class="summary-value balance">₹${fmtAmt(balance)}</div>
+      </div>
+    </div>`;
+}
+
+// ── STAGING LIST ─────────────────────────────────────
+let stagingList = []; // holds rows before final save
+
+function addToStagingList() {
+  const date = document.getElementById('entry-date').value;
+  const particulars = document.getElementById('entry-particulars').value.trim();
+  const vchType = document.getElementById('entry-vchtype').value;
+  const vchNo = document.getElementById('entry-vchno').value.trim();
+  const debit = parseFloat(document.getElementById('entry-debit').value) || 0;
+  const credit = parseFloat(document.getElementById('entry-credit').value) || 0;
+
+  if (!date || !particulars) { showToast('Date and Particulars are required', 'error'); return; }
+  if (!debit && !credit) { showToast('Enter Debit or Credit amount', 'error'); return; }
+
+  const d = new Date(date);
+  const fmtDate = `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getFullYear()).slice(2)}`;
+
+  stagingList.push({ date: fmtDate, particulars: particulars.toUpperCase(), vchType, vchNo, debit, credit });
+  renderStagingList();
+
+  // Clear form fields (keep date for convenience)
+  document.getElementById('entry-particulars').value = '';
+  document.getElementById('entry-vchtype').value = '';
+  document.getElementById('entry-vchno').value = '';
+  document.getElementById('entry-debit').value = '';
+  document.getElementById('entry-credit').value = '';
+  document.getElementById('entry-particulars').focus();
+  showToast(`Row ${stagingList.length} added to list`, 'success');
+}
+
+function renderStagingList() {
+  const section = document.getElementById('staging-section');
+  const tbody = document.getElementById('staging-tbody');
+  const countEl = document.getElementById('staging-count');
+  const totalsEl = document.getElementById('staging-totals');
+
+  section.style.display = stagingList.length ? 'block' : 'none';
+  countEl.textContent = stagingList.length;
+
+  tbody.innerHTML = stagingList.map((r, i) => `
+    <tr style="border-bottom:0.5px solid var(--border); ${i % 2 === 1 ? 'background:#f9fafc;' : ''}">
+      <td style="padding:8px 7px; color:var(--text-mid); white-space:nowrap;">${r.date}</td>
+      <td style="padding:8px 7px; color:var(--text); font-weight:500; max-width:110px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${r.particulars}">${r.particulars}</td>
+      <td style="padding:8px 7px; color:var(--text-mid); white-space:nowrap; font-size:11px;">${r.vchType || '—'}</td>
+      <td style="padding:8px 7px; text-align:right; color:${r.debit ? 'var(--navy)' : 'var(--text-light)'}; font-weight:${r.debit ? '600' : '400'};">${r.debit ? fmtAmt(r.debit) : '—'}</td>
+      <td style="padding:8px 7px; text-align:right; color:${r.credit ? 'var(--success)' : 'var(--text-light)'}; font-weight:${r.credit ? '600' : '400'};">${r.credit ? fmtAmt(r.credit) : '—'}</td>
+      <td style="padding:8px 7px; text-align:center;">
+        <button onclick="removeStagingRow(${i})" style="background:var(--danger-bg);border:none;color:var(--danger);border-radius:6px;width:26px;height:26px;cursor:pointer;font-size:14px;line-height:1;">✕</button>
+      </td>
+    </tr>`).join('');
+
+  // Running totals
+  let tDebit = 0, tCredit = 0;
+  stagingList.forEach(r => { tDebit += r.debit; tCredit += r.credit; });
+  totalsEl.innerHTML = `
+    <div style="background:var(--navy-pale);border-radius:var(--radius-sm);padding:10px;text-align:center;">
+      <div style="font-size:10px;font-weight:700;color:var(--text-light);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:3px;">Total Debit</div>
+      <div style="font-size:15px;font-weight:700;color:var(--navy);">₹${fmtAmt(tDebit)}</div>
+    </div>
+    <div style="background:#e6f7ef;border-radius:var(--radius-sm);padding:10px;text-align:center;">
+      <div style="font-size:10px;font-weight:700;color:var(--text-light);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:3px;">Total Credit</div>
+      <div style="font-size:15px;font-weight:700;color:var(--success);">₹${fmtAmt(tCredit)}</div>
+    </div>`;
+}
+
+function removeStagingRow(idx) {
+  stagingList.splice(idx, 1);
+  renderStagingList();
+  showToast('Row removed', '');
+}
+
+function clearStagingList() {
+  if (!stagingList.length) return;
+  if (!confirm('Clear all ' + stagingList.length + ' unsaved entries?')) return;
+  stagingList = [];
+  renderStagingList();
+}
+
+function confirmCancelEntry() {
+  if (stagingList.length > 0) {
+    if (!confirm(`You have ${stagingList.length} unsaved entries. Discard and go back?`)) return;
+  }
+  stagingList = [];
+  renderStagingList();
+  goBack('screen-select');
+}
+
+async function saveAllEntries() {
+  if (!stagingList.length) { showToast('No entries to save', 'error'); return; }
+  const btn = document.getElementById('save-all-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Saving...';
+
+  const ok = await appendMultipleRowsToSheet(currentCompany.name, currentParty, currentFiscal, stagingList);
+  btn.disabled = false;
+  btn.textContent = '💾 Save All to Excel (Google Drive)';
+  if (ok) {
+    showToast(`${stagingList.length} entries saved ✓`, 'success');
+    stagingList = [];
+    renderStagingList();
+    setTimeout(() => goBack('screen-select'), 1400);
+  }
+}
+
+// ── GENERATE PDF ─────────────────────────────────────
+function generatePDF() {
+  if (!reportRows.length) { showToast('No data to generate PDF', 'error'); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+  const margin = 15;
+  const pageW = doc.internal.pageSize.getWidth();
+  let y = 18;
+
+  // Header
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  doc.text('TANMAY TROPHY MFG. CO.', pageW / 2, y, { align: 'center' });
+  y += 7;
+  doc.setFontSize(11);
+  doc.text(currentParty + ' ACCOUNT', pageW / 2, y, { align: 'center' });
+  y += 6;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.text('( ' + fiscalToDateRange(currentFiscal) + ' )', pageW / 2, y, { align: 'center' });
+  y += 3;
+  doc.setDrawColor(27, 58, 92);
+  doc.setLineWidth(0.5);
+  doc.line(margin, y + 1, pageW - margin, y + 1);
+  y += 5;
+
+  // Table
+  let totalDebit = 0, totalCredit = 0;
+  const tableBody = reportRows.map(r => {
+    totalDebit += r.debit || 0;
+    totalCredit += r.credit || 0;
+    return [
+      r.date || '',
+      r.particulars || '',
+      r.vchType || '',
+      r.vchNo || '',
+      r.debit ? fmtAmt(r.debit) : '',
+      r.credit ? fmtAmt(r.credit) : ''
+    ];
+  });
+  const balance = Math.abs(totalDebit - totalCredit);
+  tableBody.push(['', 'TOTAL', '', '', fmtAmt(totalDebit), fmtAmt(totalCredit)]);
+  tableBody.push(['', 'TOTAL BALANCE', '', '', fmtAmt(balance), '']);
+
+  doc.autoTable({
+    startY: y,
+    head: [['DATE', 'PARTICULARS', 'VCH. TYPE', 'VCH. NO.', 'DEBIT', 'CREDIT']],
+    body: tableBody,
+    margin: { left: margin, right: margin },
+    headStyles: { fillColor: [27, 58, 92], textColor: 255, fontStyle: 'bold', fontSize: 9, halign: 'center' },
+    bodyStyles: { fontSize: 9, textColor: [26, 26, 46] },
+    columnStyles: {
+      0: { cellWidth: 22, halign: 'center' },
+      1: { cellWidth: 55 },
+      2: { cellWidth: 25, halign: 'center' },
+      3: { cellWidth: 18, halign: 'center' },
+      4: { cellWidth: 28, halign: 'right' },
+      5: { cellWidth: 28, halign: 'right' }
+    },
+    didParseCell: (data) => {
+      const row = data.row.index;
+      const totalIdx = tableBody.length - 2;
+      const balIdx = tableBody.length - 1;
+      if (row === totalIdx) {
+        data.cell.styles.fillColor = [232, 239, 247];
+        data.cell.styles.fontStyle = 'bold';
+        data.cell.styles.textColor = [27, 58, 92];
+      }
+      if (row === balIdx) {
+        data.cell.styles.fillColor = [245, 233, 200];
+        data.cell.styles.fontStyle = 'bold';
+        data.cell.styles.textColor = [122, 92, 26];
+      }
+    },
+    alternateRowStyles: { fillColor: [249, 250, 252] },
+    theme: 'grid'
+  });
+
+  const filename = `${currentParty}_${currentFiscal}.pdf`.replace(/\s+/g, '_');
+  doc.save(filename);
+  showToast('PDF downloaded ✓', 'success');
+}
+
+// ── SETTINGS ─────────────────────────────────────────
+function showSettings() {
+  if (!settingsUnlocked) {
+    document.getElementById('settings-password').value = '';
+    openModal('modal-password');
+  } else {
+    renderSettings();
+    showScreen('screen-settings');
+  }
+}
+
+function checkSettingsPassword() {
+  const pw = document.getElementById('settings-password').value;
+  if (pw === SETTINGS_PASSWORD) {
+    settingsUnlocked = true;
+    closeModal('modal-password');
+    renderSettings();
+    showScreen('screen-settings');
+  } else {
+    showToast('Wrong password', 'error');
+    document.getElementById('settings-password').value = '';
+  }
+}
+
+function renderSettings() {
+  const content = document.getElementById('settings-content');
+  let html = `<div class="section-label" style="margin-top:12px">Companies & Parties</div>`;
+  CONFIG.companies.forEach((co, ci) => {
+    html += `<div class="settings-group">
+      <div class="settings-row" style="background:var(--navy-pale)">
+        <div>
+          <div class="settings-row-label" style="color:var(--navy)">${co.name}</div>
+          <div class="settings-row-sub">${co.parties.length} parties</div>
+        </div>
+        <button onclick="deleteCompany(${ci})" style="background:none;border:none;color:var(--danger);font-size:18px;cursor:pointer;">🗑</button>
+      </div>`;
+    co.parties.forEach((p, pi) => {
+      html += `<div class="settings-row">
+        <span>${p}</span>
+        <button onclick="deleteParty(${ci},${pi})" style="background:none;border:none;color:var(--danger);font-size:16px;cursor:pointer;">✕</button>
+      </div>`;
+    });
+    html += `<div style="padding:10px 16px">
+        <button class="settings-add-btn" onclick="openAddPartyModal(${ci})">+ Add Party to ${co.name}</button>
+      </div>
+    </div>`;
+  });
+  html += `<button class="settings-add-btn" onclick="openModal('modal-add-company')" style="margin-top:4px; width:100%">+ Add Company</button>`;
+  html += `<div style="margin-top:20px; padding:14px; background:var(--white); border-radius:var(--radius); border:1px solid var(--border);">
+    <div style="font-size:12px; font-weight:600; color:var(--text-mid); margin-bottom:8px;">DRIVE ACCOUNT</div>
+    <button class="btn-secondary" onclick="handleAuthClick()" style="margin-top:0">Re-connect Google Drive</button>
+  </div>`;
+  content.innerHTML = html;
+}
+
+let addPartyTargetIdx = null;
+function openAddPartyModal(companyIdx) {
+  addPartyTargetIdx = companyIdx;
+  document.getElementById('add-party-company-name').textContent = CONFIG.companies[companyIdx].name;
+  document.getElementById('new-party-name').value = '';
+  openModal('modal-add-party');
+}
+
+function addParty() {
+  const name = document.getElementById('new-party-name').value.trim().toUpperCase();
+  if (!name) { showToast('Enter a party name', 'error'); return; }
+  CONFIG.companies[addPartyTargetIdx].parties.push(name);
+  saveConfig();
+  closeModal('modal-add-party');
+  renderSettings();
+  renderCompanyList();
+  showToast('Party added ✓', 'success');
+}
+
+function addCompany() {
+  const name = document.getElementById('new-company-name').value.trim().toUpperCase();
+  if (!name) { showToast('Enter a company name', 'error'); return; }
+  const id = name.toLowerCase().replace(/\s+/g, '_');
+  const short = name.split(' ').map(w => w[0]).join('').slice(0, 2);
+  CONFIG.companies.push({ id, name, short, parties: [] });
+  saveConfig();
+  closeModal('modal-add-company');
+  renderSettings();
+  renderCompanyList();
+  showToast('Company added ✓', 'success');
+}
+
+function deleteCompany(idx) {
+  if (!confirm(`Delete ${CONFIG.companies[idx].name}? This only removes it from the app config, not from Drive.`)) return;
+  CONFIG.companies.splice(idx, 1);
+  saveConfig();
+  renderSettings();
+  renderCompanyList();
+  showToast('Company removed', 'success');
+}
+
+function deleteParty(companyIdx, partyIdx) {
+  const pname = CONFIG.companies[companyIdx].parties[partyIdx];
+  if (!confirm(`Remove ${pname}? This only removes it from the app.`)) return;
+  CONFIG.companies[companyIdx].parties.splice(partyIdx, 1);
+  saveConfig();
+  renderSettings();
+  showToast('Party removed', 'success');
+}
+
+// ── COMPANY LIST RENDER ──────────────────────────────
+function renderCompanyList() {
+  const list = document.getElementById('company-list');
+  const colors = ['#1B3A5C', '#2d6a27', '#8a4a1a'];
+  const bgColors = ['#E8EFF7', '#EEF5E8', '#FBF0E6'];
+  list.innerHTML = CONFIG.companies.map((co, i) => `
+    <div class="company-card" onclick="selectCompany(CONFIG.companies[${i}])">
+      <div class="company-avatar" style="background:${bgColors[i%3]};color:${colors[i%3]}">${co.short}</div>
+      <div class="company-info">
+        <div class="company-name">${co.name}</div>
+        <div class="company-meta">${co.parties.length} parties</div>
+      </div>
+      <div class="company-arrow">›</div>
+    </div>`).join('');
+}
+
+// ── MODAL HELPERS ────────────────────────────────────
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+// Close modal on overlay click
+document.querySelectorAll('.modal-overlay').forEach(el => {
+  el.addEventListener('click', e => { if (e.target === el) el.classList.remove('open'); });
+});
+
+// ── TOAST ────────────────────────────────────────────
+let toastTimer;
+function showToast(msg, type = '') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = type ? `show ${type}` : 'show';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.className = ''; }, 3000);
+}
+
+// ── LOADER ───────────────────────────────────────────
+function showLoader(show) {
+  document.getElementById('loader').style.display = show ? 'flex' : 'none';
+}
+
+// ── INIT ─────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  renderCompanyList();
+});
+
+// Load GAPI scripts dynamically
+function loadGapiScripts() {
+  const s1 = document.createElement('script');
+  s1.src = 'https://apis.google.com/js/api.js';
+  s1.onload = () => {
+    const s2 = document.createElement('script');
+    s2.src = 'https://accounts.google.com/gsi/client';
+    s2.onload = () => { setTimeout(initGapi, 300); };
+    document.head.appendChild(s2);
+  };
+  document.head.appendChild(s1);
+}
+loadGapiScripts();
+</script>
+</body>
+</html>
