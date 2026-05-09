@@ -1089,15 +1089,24 @@ function selectCompany(company) {
 function goToAddEntry() {
   const party = document.getElementById('party-select').value;
   const fiscal = document.getElementById('fiscal-select').value;
-  if (!party) { showToast('Please select a party name', 'error'); return; }
+  
+  if (!party) { 
+    showToast('Please select a party name', 'error'); 
+    return; 
+  }
+
+  // Set global state
   currentParty = party;
   currentFiscal = fiscal;
   stagingList = [];
   renderStagingList();
-  const shortName = currentCompany.short || 'XX';
-    const prefix = `${shortName}/${currentFiscal}/`;
-    document.getElementById('vch-prefix').textContent = prefix;
-  // Set today's date
+
+  // 1. DYNAMIC PREFIX LOGIC (Bug 4)
+  // Uses short name if exists, otherwise takes first 2 letters of company name
+  const short = currentCompany.short || currentCompany.name.slice(0, 2).toUpperCase();
+  document.getElementById('vch-prefix').textContent = `${short}/${currentFiscal}/`;
+
+  // 2. RESET FIELDS
   const today = new Date();
   document.getElementById('entry-date').value = today.toISOString().split('T')[0];
   document.getElementById('entry-particulars').value = '';
@@ -1105,8 +1114,15 @@ function goToAddEntry() {
   document.getElementById('entry-vchno').value = '';
   document.getElementById('entry-debit').value = '';
   document.getElementById('entry-credit').value = '';
+  
+  // Re-enable fields (in case they were disabled by previous entry locking)
+  document.getElementById('entry-debit').disabled = false;
+  document.getElementById('entry-credit').disabled = false;
+
+  // 3. UI CONTEXT
   document.getElementById('entry-context-sub').textContent = `${currentCompany.name} · ${party} · ${fiscal}`;
   document.getElementById('entry-context-pill').innerHTML = `🏢 ${currentCompany.name} &nbsp;|&nbsp; 👤 ${party} &nbsp;|&nbsp; 📅 ${fiscal}`;
+  
   showScreen('screen-entry');
 }
 
@@ -1464,6 +1480,26 @@ function renderSettings() {
   </div>`;
   content.innerHTML = html;
 }
+
+  // Lock fields based on Type
+document.getElementById('entry-vchtype').addEventListener('change', (e) => {
+    const dr = document.getElementById('entry-debit');
+    const cr = document.getElementById('entry-credit');
+    dr.disabled = false; cr.disabled = false;
+    if (['Payment', 'Purchase', 'Debit Note'].includes(e.target.value)) {
+        cr.value = 0; cr.disabled = true;
+    } else if (['Receipt', 'Sale', 'Credit Note'].includes(e.target.value)) {
+        dr.value = 0; dr.disabled = true;
+    }
+});
+
+// Mutual Exclusion
+document.getElementById('entry-debit').addEventListener('input', () => {
+    if(document.getElementById('entry-debit').value > 0) document.getElementById('entry-credit').value = 0;
+});
+document.getElementById('entry-credit').addEventListener('input', () => {
+    if(document.getElementById('entry-credit').value > 0) document.getElementById('entry-debit').value = 0;
+});
 
 let addPartyTargetIdx = null;
 function openAddPartyModal(companyIdx) {
