@@ -675,7 +675,7 @@ html, body {
 
     <div class="content">
       <div class="report-header-card">
-        <div class="report-company">TANMAY TROPHY MFG. CO.</div>
+        <div class="report-company" id="rpt-company-name">—</div>
         <div class="report-party" id="rpt-party-name">— ACCOUNT</div>
         <div class="report-period" id="rpt-period"></div>
       </div>
@@ -1065,9 +1065,11 @@ async function downloadFile(fileId) {
   return new Uint8Array(buf).reduce((s, b) => s + String.fromCharCode(b), '');
 }
 
-async function uploadFile(fileId, binaryData, fileName) {
+async function uploadFile(fileId, binaryData, fileName, parentFolderId = null) {
   const boundary = '-------314159265358979323846';
-  const metadata = JSON.stringify({ name: fileName, mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const metaObj = { name: fileName, mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
+  if (!fileId && parentFolderId) metaObj.parents = [parentFolderId];
+  const metadata = JSON.stringify(metaObj);
   const enc = new TextEncoder();
   const metaPart = enc.encode(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\r\n\r\n`);
   const closing = enc.encode(`\r\n--${boundary}--`);
@@ -1134,7 +1136,7 @@ async function appendRowToSheet(companyName, partyName, fiscal, rowData) {
     if (!wb.SheetNames.includes(fiscal)) {
       // Create new sheet with headers
       const headerRows = [
-        ['TANMAY TROPHY MFG. CO.'],
+        [companyName],
         [partyName + ' ACCOUNT'],
         ['(' + fiscalToDateRange(fiscal) + ')'],
         ['DATE','PARTICULARS','VCH. TYPE','VCH. NO.','DEBIT','CREDIT']
@@ -1166,7 +1168,9 @@ async function appendRowToSheet(companyName, partyName, fiscal, rowData) {
     wb.Sheets[fiscal] = newWs;
 
     const out = XLSX.write(wb, { type: 'binary', bookType: 'xlsx' });
-    await uploadFile(fileId, out, partyName + '.xlsx');
+    const rootFolderId = await getOrCreateFolder('Manage Accounts');
+    const companyFolderId = await getOrCreateFolder(companyName, rootFolderId);
+    await uploadFile(fileId, out, partyName + '.xlsx', companyFolderId);
     showLoader(false);
     return true;
   } catch(e) {
@@ -1191,7 +1195,7 @@ async function appendMultipleRowsToSheet(companyName, partyName, fiscal, rows) {
     }
     if (!wb.SheetNames.includes(fiscal)) {
       const headerRows = [
-        ['TANMAY TROPHY MFG. CO.'],
+        [companyName],
         [partyName + ' ACCOUNT'],
         ['(' + fiscalToDateRange(fiscal) + ')'],
         ['DATE','PARTICULARS','VCH. TYPE','VCH. NO.','DEBIT','CREDIT']
@@ -1217,7 +1221,9 @@ async function appendMultipleRowsToSheet(companyName, partyName, fiscal, rows) {
     const newWs = XLSX.utils.aoa_to_sheet(allRows);
     wb.Sheets[fiscal] = newWs;
     const out = XLSX.write(wb, { type: 'binary', bookType: 'xlsx' });
-    await uploadFile(fileId, out, partyName + '.xlsx');
+    const rootFolderId = await getOrCreateFolder('Manage Accounts');
+    const companyFolderId = await getOrCreateFolder(companyName, rootFolderId);
+    await uploadFile(fileId, out, partyName + '.xlsx', companyFolderId);
     showLoader(false);
     return true;
   } catch(e) {
@@ -1350,6 +1356,7 @@ async function goToReport() {
   currentParty = party;
   currentFiscal = fiscal;
   document.getElementById('report-context-sub').textContent = `${currentCompany.name} · ${party} · ${fiscal}`;
+  document.getElementById('rpt-company-name').textContent = currentCompany.name;
   document.getElementById('rpt-party-name').textContent = party + ' ACCOUNT';
   document.getElementById('rpt-period').textContent = '( ' + fiscalToDateRange(fiscal) + ' )';
   reportRows = await loadSheetData(currentCompany.name, party, fiscal);
@@ -1530,8 +1537,21 @@ async function saveAllEntries() {
 }
 
 // ── GENERATE PDF ─────────────────────────────────────
-function generatePDF() {
-  if (!reportRows.length) { showToast('No data to generate PDF', 'error'); return; }
+async function generatePDF() {
+  if (!currentParty || !currentFiscal) { showToast('No report loaded', 'error'); return; }
+
+  // Always use the latest data — reload from Drive if connected
+  let rows = reportRows;
+  if (driveConnected) {
+    showLoader(true);
+    rows = await loadSheetData(currentCompany.name, currentParty, currentFiscal);
+    showLoader(false);
+    if (!rows.length) { showToast('No data found on Drive for this selection', 'error'); return; }
+    reportRows = rows;
+    renderReport(rows); // refresh the on-screen table too
+  }
+  if (!rows.length) { showToast('No data to generate PDF', 'error'); return; }
+
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
@@ -1542,7 +1562,7 @@ function generatePDF() {
   // Header
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(13);
-  doc.text('TANMAY TROPHY MFG. CO.', pageW / 2, y, { align: 'center' });
+  doc.text(currentCompany.name, pageW / 2, y, { align: 'center' });
   y += 7;
   doc.setFontSize(11);
   doc.text(currentParty + ' ACCOUNT', pageW / 2, y, { align: 'center' });
@@ -1558,7 +1578,7 @@ function generatePDF() {
 
   // Table
   let totalDebit = 0, totalCredit = 0;
-  const tableBody = reportRows.map(r => {
+  const tableBody = rows.map(r => {
     totalDebit += r.debit || 0;
     totalCredit += r.credit || 0;
     return [
