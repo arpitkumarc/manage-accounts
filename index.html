@@ -751,6 +751,31 @@ html, body {
   </div>
 </div>
 
+<!-- Upload Excel Modal -->
+<div class="modal-overlay" id="modal-upload-excel">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-title">📤 Upload Existing Excel</div>
+    <div style="font-size:12px;color:var(--text-mid);margin-bottom:14px;line-height:1.5;">
+      Upload a party's <strong>.xlsx</strong> file to Google Drive. It will be stored in<br>
+      <code style="font-size:11px;background:var(--bg);padding:2px 6px;border-radius:4px;">Manage Accounts / <span id="upload-company-display">Company</span> / Party Name</code>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Party Name (must match exactly)</label>
+      <select class="form-select" id="upload-party-select">
+        <option value="">— Select Party —</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Excel File (.xlsx)</label>
+      <input type="file" accept=".xlsx" id="upload-excel-file"
+        style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px;background:var(--white);">
+    </div>
+    <button class="btn-primary" onclick="handleExcelUpload()">⬆️ Upload & Convert to Google Sheet</button>
+    <button class="btn-secondary" onclick="closeModal('modal-upload-excel')">Cancel</button>
+  </div>
+</div>
+
 <!-- ════════════════════════════════════════════════
      JAVASCRIPT
      ════════════════════════════════════════════════ -->
@@ -1032,206 +1057,396 @@ async function syncCompanyMasterToSheet() {
 
 // ── DRIVE FILE OPERATIONS ───────────────────────────
 
-  async function getOrCreateFolder(name, parentId = null) {
-    let q = `name='${name}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
-    if (parentId) q += ` and '${parentId}' in parents`;
-    const resp = await driveAPI('GET', `files?q=${encodeURIComponent(q)}&fields=files(id)`);
-    if (resp.files?.length > 0) return resp.files[0].id;
-    const body = { name, mimeType: 'application/vnd.google-apps.folder' };
-    if (parentId) body.parents = [parentId];
-    const newFolder = await driveAPI('POST', 'files', body);
-    return newFolder.id;
+async function getOrCreateFolder(name, parentId = null) {
+  let q = `name='${name}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+  if (parentId) q += ` and '${parentId}' in parents`;
+  const resp = await driveAPI('GET', `files?q=${encodeURIComponent(q)}&fields=files(id)`);
+  if (resp.files?.length > 0) return resp.files[0].id;
+  const body = { name, mimeType: 'application/vnd.google-apps.folder' };
+  if (parentId) body.parents = [parentId];
+  const newFolder = await driveAPI('POST', 'files', body);
+  return newFolder.id;
 }
 
-// Rewritten findFile to check Manage Accounts -> Company -> File
-async function findFile(companyName, partyName) {
-    try {
-        const rootFolderId = await getOrCreateFolder('Manage Accounts');
-        const companyFolderId = await getOrCreateFolder(companyName, rootFolderId);
-        const q = `name='${partyName}.xlsx' and '${companyFolderId}' in parents and trashed=false`;
-        const resp = await driveAPI('GET', `files?q=${encodeURIComponent(q)}&fields=files(id)`);
-        return resp.files?.length > 0 ? resp.files[0].id : null;
-    } catch (e) {
-        showContactAuthorPopup('finding the file on Google Drive');
-        throw e;
+// Returns Google Sheet file ID for a party, or null. Looks for Google Sheet named partyName.
+async function findPartySheet(companyName, partyName) {
+  try {
+    const rootFolderId = await getOrCreateFolder('Manage Accounts');
+    const companyFolderId = await getOrCreateFolder(companyName, rootFolderId);
+    const q = `name='${partyName}' and '${companyFolderId}' in parents and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`;
+    const resp = await driveAPI('GET', `files?q=${encodeURIComponent(q)}&fields=files(id,name)`);
+    return resp.files?.length > 0 ? resp.files[0].id : null;
+  } catch (e) {
+    console.error('findPartySheet error:', e);
+    throw e;
+  }
+}
+
+// Returns company folder ID (creates if needed)
+async function getCompanyFolderId(companyName) {
+  const rootFolderId = await getOrCreateFolder('Manage Accounts');
+  return await getOrCreateFolder(companyName, rootFolderId);
+}
+
+// Upload an Excel file and convert it to Google Sheets format in the company folder.
+// Shows a file picker if no File object is provided.
+async function uploadExcelAsGoogleSheet(companyName, partyName, fileObj) {
+  if (!driveConnected) { showToast('Connect Google Drive first', 'error'); return null; }
+  showLoader(true);
+  try {
+    const companyFolderId = await getCompanyFolderId(companyName);
+
+    // Check if a sheet already exists — if so warn user
+    const existing = await findPartySheet(companyName, partyName);
+    if (existing) {
+      showLoader(false);
+      showToast(`Sheet for ${partyName} already exists! Delete it in Drive first to re-upload.`, 'error');
+      return null;
     }
+
+    const arrayBuf = await fileObj.arrayBuffer();
+
+    // Upload as xlsx then convert to Google Sheet via mimeType in metadata
+    const boundary = '-------BOUNDARY987654321';
+    const meta = JSON.stringify({
+      name: partyName,
+      mimeType: 'application/vnd.google-apps.spreadsheet',
+      parents: [companyFolderId]
+    });
+    const enc = new TextEncoder();
+    const metaPart = enc.encode(
+      `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n` +
+      `--${boundary}\r\nContent-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\r\n\r\n`
+    );
+    const closing = enc.encode(`\r\n--${boundary}--`);
+    const filePart = new Uint8Array(arrayBuf);
+    const body = new Uint8Array(metaPart.length + filePart.length + closing.length);
+    body.set(metaPart, 0);
+    body.set(filePart, metaPart.length);
+    body.set(closing, metaPart.length + filePart.length);
+
+    const r = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&convert=true', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': `multipart/related; boundary="${boundary}"`
+      },
+      body
+    });
+    if (!r.ok) throw new Error('Upload failed: ' + await r.text());
+    const result = await r.json();
+    showLoader(false);
+    showToast(`Uploaded & converted: ${partyName} ✓`, 'success');
+    return result.id;
+  } catch(e) {
+    showLoader(false);
+    console.error('uploadExcelAsGoogleSheet error:', e);
+    showToast('Upload error: ' + e.message, 'error');
+    return null;
+  }
 }
 
-async function downloadFile(fileId) {
-  const r = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
-    headers: { Authorization: `Bearer ${accessToken}` }
-  });
-  const buf = await r.arrayBuffer();
-  return new Uint8Array(buf).reduce((s, b) => s + String.fromCharCode(b), '');
-}
-
-async function uploadFile(fileId, binaryData, fileName, parentFolderId = null) {
-  const boundary = '-------314159265358979323846';
-  const metaObj = { name: fileName, mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
-  if (!fileId && parentFolderId) metaObj.parents = [parentFolderId];
-  const metadata = JSON.stringify(metaObj);
-  const enc = new TextEncoder();
-  const metaPart = enc.encode(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\r\n\r\n`);
-  const closing = enc.encode(`\r\n--${boundary}--`);
-  const binBytes = Uint8Array.from(binaryData, c => c.charCodeAt(0));
-  const body = new Uint8Array(metaPart.length + binBytes.length + closing.length);
-  body.set(metaPart, 0); body.set(binBytes, metaPart.length); body.set(closing, metaPart.length + binBytes.length);
-  const method = fileId ? 'PATCH' : 'POST';
-  const url = fileId
-    ? `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart`
-    : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
-  const r = await fetch(url, {
-    method,
-    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': `multipart/related; boundary="${boundary}"` },
-    body
-  });
-  if (!r.ok) throw new Error('Upload failed: ' + await r.text());
-  return r.json();
-}
-
-// ── READ SHEET DATA ─────────────────────────────────
+// ── READ SHEET DATA via Sheets API ──────────────────
+// Reads the fiscal year tab and returns data rows, skipping header rows and TOTAL rows.
+// Structure: Row1=CompanyName, Row2-3=empty, Row4=PartyName, Row5=DateRange,
+//            Row6=Headers, Row7+=data, blank row, TOTAL, TOTAL BALANCE
 async function loadSheetData(companyName, partyName, fiscal) {
   if (!driveConnected) return getDemoData(partyName, fiscal);
   showLoader(true);
   try {
-    const fileId = await findFile(companyName, partyName);
+    const fileId = await findPartySheet(companyName, partyName);
     if (!fileId) { showLoader(false); return []; }
-    const binary = await downloadFile(fileId);
-    const wb = XLSX.read(binary, { type: 'binary' });
-    if (!wb.SheetNames.includes(fiscal)) { showLoader(false); return []; }
-    const ws = wb.Sheets[fiscal];
-    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-    // Find data rows (skip header rows — look for row with DATE as first non-empty cell)
-    let dataStart = 0;
+
+    // Check if the fiscal tab exists
+    const meta = await sheetsAPI('GET', `${fileId}?fields=sheets.properties`);
+    const tabExists = (meta.sheets || []).some(s => s.properties.title === fiscal);
+    if (!tabExists) { showLoader(false); return []; }
+
+    // Read all values from the tab (use UNFORMATTED_VALUE to get raw numbers)
+    const resp = await sheetsAPI('GET', `${fileId}/values/${encodeURIComponent(fiscal)}?valueRenderOption=UNFORMATTED_VALUE`);
+    const rows = resp.values || [];
+
+    // Find header row (contains DATE in col A)
+    let dataStart = 6; // Row 6 (0-indexed: 5) is always header per our structure
     for (let i = 0; i < rows.length; i++) {
-      if (String(rows[i][0]).toUpperCase().includes('DATE')) { dataStart = i + 1; break; }
+      if (String(rows[i][0] || '').trim().toUpperCase().includes('DATE')) {
+        dataStart = i + 1;
+        break;
+      }
     }
+
     const data = [];
     for (let i = dataStart; i < rows.length; i++) {
       const r = rows[i];
-      if (!r[0] && !r[1]) continue;
-      const label = String(r[1]).toUpperCase();
+      if (!r || (!r[0] && !r[1])) continue; // blank row
+      const label = String(r[1] || '').trim().toUpperCase();
       if (label === 'TOTAL' || label === 'TOTAL BALANCE') continue;
-      data.push({ date: r[0], particulars: r[1], vchType: r[2], vchNo: r[3], debit: parseFloat(r[4]) || 0, credit: parseFloat(r[5]) || 0 });
+      data.push({
+        date:        String(r[0] || '').trim(),
+        particulars: String(r[1] || '').trim(),
+        vchType:     String(r[2] || '').trim(),
+        vchNo:       String(r[3] || '').trim(),
+        debit:       parseFloat(r[4]) || 0,
+        credit:      parseFloat(r[5]) || 0
+      });
     }
     showLoader(false);
     return data;
-  } catch(e) { showLoader(false); console.error(e); return []; }
-}
-
-// ── APPEND ROW TO SHEET ──────────────────────────────
-async function appendRowToSheet(companyName, partyName, fiscal, rowData) {
-  if (!driveConnected) { showToast('Not connected to Drive. Entry saved locally only.', 'error'); return false; }
-  showLoader(true);
-  try {
-    const fileId = await findFile(companyName, partyName);
-    let wb;
-    if (fileId) {
-      const binary = await downloadFile(fileId);
-      wb = XLSX.read(binary, { type: 'binary' });
-    } else {
-      wb = XLSX.utils.book_new();
-    }
-
-    if (!wb.SheetNames.includes(fiscal)) {
-      // Create new sheet with headers
-      const headerRows = [
-        [companyName],
-        [partyName + ' ACCOUNT'],
-        ['(' + fiscalToDateRange(fiscal) + ')'],
-        ['DATE','PARTICULARS','VCH. TYPE','VCH. NO.','DEBIT','CREDIT']
-      ];
-      const ws = XLSX.utils.aoa_to_sheet(headerRows);
-      XLSX.utils.book_append_sheet(wb, ws, fiscal);
-    }
-
-    const ws = wb.Sheets[fiscal];
-    const existing = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-    // Find TOTAL row or end
-    let insertAt = existing.length;
-    for (let i = 0; i < existing.length; i++) {
-      if (String(existing[i][1]).toUpperCase() === 'TOTAL') { insertAt = i; break; }
-    }
-    // Rebuild rows
-    const newRow = [rowData.date, rowData.particulars, rowData.vchType, rowData.vchNo, rowData.debit || '', rowData.credit || ''];
-    const allRows = [...existing.slice(0, insertAt), newRow];
-    // Recalculate totals
-    let totalDebit = 0, totalCredit = 0;
-    for (let i = 4; i < allRows.length; i++) { // skip 4 header rows
-      totalDebit += parseFloat(allRows[i][4]) || 0;
-      totalCredit += parseFloat(allRows[i][5]) || 0;
-    }
-    allRows.push(['','TOTAL','','',totalDebit, totalCredit]);
-    allRows.push(['','TOTAL BALANCE','','', Math.abs(totalDebit - totalCredit), '']);
-
-    const newWs = XLSX.utils.aoa_to_sheet(allRows);
-    wb.Sheets[fiscal] = newWs;
-
-    const out = XLSX.write(wb, { type: 'binary', bookType: 'xlsx' });
-    const rootFolderId = await getOrCreateFolder('Manage Accounts');
-    const companyFolderId = await getOrCreateFolder(companyName, rootFolderId);
-    await uploadFile(fileId, out, partyName + '.xlsx', companyFolderId);
-    showLoader(false);
-    return true;
   } catch(e) {
     showLoader(false);
-    console.error(e);
-    showToast('Error saving: ' + e.message, 'error');
-    return false;
+    console.error('loadSheetData error:', e);
+    return [];
   }
 }
 
-async function appendMultipleRowsToSheet(companyName, partyName, fiscal, rows) {
+// ── ENSURE FISCAL TAB EXISTS ─────────────────────────
+// If the Google Sheet for this party exists but doesn't have this fiscal tab,
+// create it with the correct structure.
+async function ensureFiscalTab(fileId, companyName, partyName, fiscal) {
+  const meta = await sheetsAPI('GET', `${fileId}?fields=sheets.properties`);
+  const existingTabs = (meta.sheets || []).map(s => s.properties.title);
+  if (existingTabs.includes(fiscal)) return; // already exists
+
+  // Add the tab
+  await sheetsAPI('POST', `${fileId}:batchUpdate`, {
+    requests: [{ addSheet: { properties: { title: fiscal } } }]
+  });
+
+  // Build the header structure matching the Excel format exactly:
+  // Row 1: Company name (A1)
+  // Row 2-3: empty
+  // Row 4: Party name with leading spaces (A4)
+  // Row 5: Date range split: C5=(01.04.YYYY -  D5=31.03.YYYY)
+  // Row 6: Headers
+  // Row 7: (first data row — will be blank for now, TOTAL/BALANCE come after first entry)
+  const [y1, y2short] = fiscal.split('-');
+  const y2 = '20' + y2short;
+  const dateRangeStart = `(01.04.${y1} -`;
+  const dateRangeEnd   = `31.03.${y2})`;
+
+  const values = [
+    [companyName, '', '', '', '', ''],                       // Row 1
+    ['', '', '', '', '', ''],                                 // Row 2
+    ['', '', '', '', '', ''],                                 // Row 3
+    [`  ${partyName}`, '', '', '', '', ''],                  // Row 4
+    ['', '', dateRangeStart, dateRangeEnd, '', ''],          // Row 5
+    ['   DATE', '    PARTICULAR', 'VCH. TYPE', 'VCH. NO.', 'PRODUCT SOLD', 'PAYMENT RECEIVED'], // Row 6
+    // Row 7 onwards: data will be inserted by append
+  ];
+
+  await sheetsAPI('PUT', `${fileId}/values/${encodeURIComponent(fiscal + '!A1')}?valueInputOption=RAW`, {
+    values
+  });
+}
+
+// ── CREATE NEW GOOGLE SHEET for a party ─────────────
+async function createPartyGoogleSheet(companyName, partyName, fiscal) {
+  const companyFolderId = await getCompanyFolderId(companyName);
+
+  // Create blank Google Sheet
+  const r = await driveAPI('POST', 'files', {
+    name: partyName,
+    mimeType: 'application/vnd.google-apps.spreadsheet',
+    parents: [companyFolderId]
+  });
+  const fileId = r.id;
+  if (!fileId) throw new Error('Could not create Google Sheet');
+
+  // Delete the default "Sheet1" tab and set up fiscal tab
+  const meta = await sheetsAPI('GET', `${fileId}?fields=sheets.properties`);
+  const defaultTab = meta.sheets[0];
+
+  // Rename default tab to the fiscal year (cheaper than delete+add)
+  await sheetsAPI('POST', `${fileId}:batchUpdate`, {
+    requests: [{
+      updateSheetProperties: {
+        properties: { sheetId: defaultTab.properties.sheetId, title: fiscal },
+        fields: 'title'
+      }
+    }]
+  });
+
+  // Write the header structure
+  const [y1, y2short] = fiscal.split('-');
+  const y2 = '20' + y2short;
+  const dateRangeStart = `(01.04.${y1} -`;
+  const dateRangeEnd   = `31.03.${y2})`;
+
+  const values = [
+    [companyName, '', '', '', '', ''],
+    ['', '', '', '', '', ''],
+    ['', '', '', '', '', ''],
+    [`  ${partyName}`, '', '', '', '', ''],
+    ['', '', dateRangeStart, dateRangeEnd, '', ''],
+    ['   DATE', '    PARTICULAR', 'VCH. TYPE', 'VCH. NO.', 'PRODUCT SOLD', 'PAYMENT RECEIVED'],
+  ];
+
+  await sheetsAPI('PUT', `${fileId}/values/${encodeURIComponent(fiscal + '!A1')}?valueInputOption=RAW`, {
+    values
+  });
+  return fileId;
+}
+
+// ── APPEND MULTIPLE ROWS TO SHEET ────────────────────
+// Finds the TOTAL row, inserts new data rows just before it (preserving the
+// blank gap row), then updates the SUM formulas to cover the new range.
+async function appendMultipleRowsToSheet(companyName, partyName, fiscal, newEntries) {
   if (!driveConnected) { showToast('Not connected to Drive', 'error'); return false; }
   showLoader(true);
   try {
-    const fileId = await findFile(companyName, partyName);
-    let wb;
-    if (fileId) {
-      const binary = await downloadFile(fileId);
-      wb = XLSX.read(binary, { type: 'binary' });
+    // 1. Find or create the Google Sheet for this party
+    let fileId = await findPartySheet(companyName, partyName);
+    if (!fileId) {
+      fileId = await createPartyGoogleSheet(companyName, partyName, fiscal);
     } else {
-      wb = XLSX.utils.book_new();
+      // Make sure this fiscal tab exists
+      await ensureFiscalTab(fileId, companyName, partyName, fiscal);
     }
-    if (!wb.SheetNames.includes(fiscal)) {
-      const headerRows = [
-        [companyName],
-        [partyName + ' ACCOUNT'],
-        ['(' + fiscalToDateRange(fiscal) + ')'],
-        ['DATE','PARTICULARS','VCH. TYPE','VCH. NO.','DEBIT','CREDIT']
-      ];
-      const ws = XLSX.utils.aoa_to_sheet(headerRows);
-      XLSX.utils.book_append_sheet(wb, ws, fiscal);
+
+    // 2. Read ALL rows from this tab to find structure
+    const resp = await sheetsAPI('GET',
+      `${fileId}/values/${encodeURIComponent(fiscal)}?valueRenderOption=UNFORMATTED_VALUE`
+    );
+    const rows = resp.values || [];
+
+    // 3. Find the TOTAL row index (1-based row number in the sheet)
+    //    Structure: data starts at row 7, then blank row, then TOTAL, then TOTAL BALANCE
+    //    We look for a row where col B (index 1) trimmed = 'TOTAL'
+    let totalRowIdx = -1; // 0-based index in `rows` array
+    for (let i = 0; i < rows.length; i++) {
+      const cell = String(rows[i]?.[1] || '').trim().toUpperCase();
+      if (cell === 'TOTAL') { totalRowIdx = i; break; }
     }
-    const ws = wb.Sheets[fiscal];
-    const existing = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-    let insertAt = existing.length;
-    for (let i = 0; i < existing.length; i++) {
-      if (String(existing[i][1]).toUpperCase() === 'TOTAL') { insertAt = i; break; }
+
+    // 4. Determine where to insert new data rows
+    //    If TOTAL row exists: insert before the blank row that precedes TOTAL
+    //    The blank row is always 1 row before TOTAL in the original format
+    //    We'll insert at: (totalRowIdx - 1) keeping blank row between data and TOTAL
+    //    If no TOTAL row yet: append after last data row, then add blank + TOTAL + BALANCE
+
+    // Count existing data rows (rows 7+ that are not blank/TOTAL/TOTAL BALANCE)
+    // Row 6 (0-indexed: 5) is the header row, data starts at 0-indexed 6
+    const DATA_START_IDX = 6; // 0-based
+
+    if (totalRowIdx === -1) {
+      // No TOTAL row yet — just append rows after all existing data, then add TOTAL+BALANCE
+      const lastDataIdx = rows.length; // append at end
+      const insertAtRow = lastDataIdx + 1; // 1-based sheet row
+
+      // Build values to append: new data rows + blank + TOTAL formula + BALANCE formula
+      const newValues = newEntries.map(r => [
+        r.date,
+        r.particulars,
+        r.vchType || '',
+        r.vchNo   || '',
+        r.debit   || '',
+        r.credit  || ''
+      ]);
+      const totalRow   = lastDataIdx + newEntries.length + 1; // 1-based row of TOTAL
+      const lastDataRow1based = lastDataIdx + newEntries.length; // last data row 1-based
+
+      // Append the new data rows
+      await sheetsAPI('POST',
+        `${fileId}/values/${encodeURIComponent(fiscal + '!A' + insertAtRow)}:append?valueInputOption=RAW&insertDataOption=OVERWRITE`,
+        { values: newValues }
+      );
+
+      // Add blank row + TOTAL + BALANCE after them
+      const blankRow = totalRow;       // 1-based
+      const totalSumRow = blankRow + 1;
+      const balanceRow  = blankRow + 2;
+      await sheetsAPI('PUT',
+        `${fileId}/values/${encodeURIComponent(fiscal + '!A' + blankRow)}?valueInputOption=USER_ENTERED`,
+        { values: [
+          ['', '', '', '', '', ''],
+          ['', 'TOTAL', '', '', `=SUM(E7:E${lastDataRow1based})`, `=SUM(F7:F${lastDataRow1based})`],
+          ['', 'TOTAL BALANCE', '', '', `=(E${totalSumRow}-F${totalSumRow})`, '']
+        ]}
+      );
+    } else {
+      // TOTAL row exists — insert new rows just before the blank row (totalRowIdx - 1)
+      // totalRowIdx is 0-based; sheet row is totalRowIdx + 1 (1-based)
+      // The blank row is at totalRowIdx - 1 (0-based) = totalRowIdx (1-based)
+      // We want to INSERT rows at the blank row position, pushing TOTAL down
+
+      const insertBeforeRow1based = totalRowIdx; // insert before blank row (1-based = totalRowIdx)
+      // If totalRowIdx > DATA_START_IDX and the row before TOTAL is blank, insert before blank
+      // Otherwise insert directly before TOTAL
+      const rowBeforeTotal = rows[totalRowIdx - 1];
+      const isBlankBeforeTotal = !rowBeforeTotal || rowBeforeTotal.every(c => !String(c || '').trim());
+      const insertRow1based = isBlankBeforeTotal ? totalRowIdx : totalRowIdx + 1; // 1-based
+
+      // Insert empty rows first via batchUpdate insertDimension
+      await sheetsAPI('POST', `${fileId}:batchUpdate`, {
+        requests: [{
+          insertDimension: {
+            range: {
+              sheetId: await getSheetIdByTitle(fileId, fiscal),
+              dimension: 'ROWS',
+              startIndex: insertRow1based - 1, // 0-based
+              endIndex:   insertRow1based - 1 + newEntries.length
+            },
+            inheritFromBefore: true
+          }
+        }]
+      });
+
+      // Write the new data into those inserted rows
+      const newValues = newEntries.map(r => [
+        r.date,
+        r.particulars,
+        r.vchType || '',
+        r.vchNo   || '',
+        r.debit   || '',
+        r.credit  || ''
+      ]);
+      await sheetsAPI('PUT',
+        `${fileId}/values/${encodeURIComponent(fiscal + '!A' + insertRow1based)}?valueInputOption=RAW`,
+        { values: newValues }
+      );
+
+      // Update TOTAL formula to cover the expanded range
+      // New TOTAL row = totalRowIdx + 1 + newEntries.length (shifted down)
+      // But Sheets API with insertDimension auto-updates formulas in the same sheet,
+      // so we just need to make sure the SUM range is correct.
+      // The new TOTAL row (1-based) = (totalRowIdx + 1) + newEntries.length
+      const newTotalRow1based = totalRowIdx + 1 + newEntries.length;
+      // Find last data row = newTotalRow1based - 1 (blank row) - 1 = newTotalRow1based - 2
+      // But if there was a blank row, last data row = newTotalRow1based - 2
+      // We'll recalculate: last data row = all non-blank, non-TOTAL rows after DATA_START_IDX
+      const lastDataRow = newTotalRow1based - (isBlankBeforeTotal ? 2 : 1);
+      await sheetsAPI('PUT',
+        `${fileId}/values/${encodeURIComponent(fiscal + '!E' + newTotalRow1based)}?valueInputOption=USER_ENTERED`,
+        { values: [[`=SUM(E7:E${lastDataRow})`]] }
+      );
+      await sheetsAPI('PUT',
+        `${fileId}/values/${encodeURIComponent(fiscal + '!F' + newTotalRow1based)}?valueInputOption=USER_ENTERED`,
+        { values: [[`=SUM(F7:F${lastDataRow})`]] }
+      );
+      // Update TOTAL BALANCE formula reference
+      const newBalanceRow = newTotalRow1based + 1;
+      await sheetsAPI('PUT',
+        `${fileId}/values/${encodeURIComponent(fiscal + '!E' + newBalanceRow)}?valueInputOption=USER_ENTERED`,
+        { values: [[`=(E${newTotalRow1based}-F${newTotalRow1based})`]] }
+      );
     }
-    const newRows = rows.map(r => [r.date, r.particulars, r.vchType, r.vchNo, r.debit || '', r.credit || '']);
-    const allRows = [...existing.slice(0, insertAt), ...newRows];
-    let totalDebit = 0, totalCredit = 0;
-    for (let i = 4; i < allRows.length; i++) {
-      totalDebit += parseFloat(allRows[i][4]) || 0;
-      totalCredit += parseFloat(allRows[i][5]) || 0;
-    }
-    allRows.push(['','TOTAL','','', totalDebit, totalCredit]);
-    allRows.push(['','TOTAL BALANCE','','', Math.abs(totalDebit - totalCredit), '']);
-    const newWs = XLSX.utils.aoa_to_sheet(allRows);
-    wb.Sheets[fiscal] = newWs;
-    const out = XLSX.write(wb, { type: 'binary', bookType: 'xlsx' });
-    const rootFolderId = await getOrCreateFolder('Manage Accounts');
-    const companyFolderId = await getOrCreateFolder(companyName, rootFolderId);
-    await uploadFile(fileId, out, partyName + '.xlsx', companyFolderId);
+
     showLoader(false);
     return true;
   } catch(e) {
     showLoader(false);
-    console.error(e);
+    console.error('appendMultipleRowsToSheet error:', e);
     showContactAuthorPopup('saving entries to Google Drive');
     return false;
   }
+}
+
+// Helper: get sheet (tab) ID by its title
+async function getSheetIdByTitle(fileId, title) {
+  const meta = await sheetsAPI('GET', `${fileId}?fields=sheets.properties`);
+  const sheet = (meta.sheets || []).find(s => s.properties.title === title);
+  if (!sheet) throw new Error(`Tab "${title}" not found in spreadsheet`);
+  return sheet.properties.sheetId;
 }
 
 function fiscalToDateRange(fiscal) {
@@ -1675,8 +1890,9 @@ function renderSettings() {
         <button onclick="deleteParty(${ci},${pi})" style="background:none;border:none;color:var(--danger);font-size:16px;cursor:pointer;">✕</button>
       </div>`;
     });
-    html += `<div style="padding:10px 16px">
-        <button class="settings-add-btn" onclick="openAddPartyModal(${ci})">+ Add Party to ${co.name}</button>
+    html += `<div style="padding:10px 16px; display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="settings-add-btn" style="flex:1; min-width:140px;" onclick="openAddPartyModal(${ci})">+ Add Party</button>
+        <button class="settings-add-btn" style="flex:1; min-width:140px; background:var(--gold-light); border-color:var(--gold); color:#7a5c1a;" onclick="openUploadExcelModal(${ci})">📤 Upload Excel</button>
       </div>
     </div>`;
   });
@@ -1686,6 +1902,7 @@ function renderSettings() {
     <div style="font-size:11px; color:var(--text-light); margin-bottom:10px;">
       Stored in: <strong>Manage Accounts / Company Master</strong> (Google Sheet)<br>
       Each tab = company · Column A = party names<br>
+      Party data files: <strong>Manage Accounts / Company Name / Party Name</strong> (Google Sheet)<br>
       ${companyMasterFileId ? '✅ Sheet ID: <code style="font-size:10px;">' + companyMasterFileId + '</code>' : '⚠️ Sheet not yet located — click Reload to connect'}
     </div>
     <button class="btn-primary" onclick="loadCompanyMasterFromSheet()" style="margin-top:0; margin-bottom:8px; font-size:13px;">🔄 Reload from Google Sheet</button>
@@ -1703,6 +1920,38 @@ function openAddPartyModal(companyIdx) {
   document.getElementById('add-party-company-name').textContent = CONFIG.companies[companyIdx].name;
   document.getElementById('new-party-name').value = '';
   openModal('modal-add-party');
+}
+
+// ── UPLOAD EXCEL ──────────────────────────────────────
+let uploadTargetCompanyIdx = null;
+function openUploadExcelModal(companyIdx) {
+  if (!driveConnected) { showToast('Connect Google Drive first', 'error'); return; }
+  uploadTargetCompanyIdx = companyIdx;
+  const co = CONFIG.companies[companyIdx];
+  document.getElementById('upload-company-display').textContent = co.name;
+  // Populate party dropdown
+  const sel = document.getElementById('upload-party-select');
+  sel.innerHTML = '<option value="">— Select Party —</option>';
+  co.parties.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p; opt.textContent = p;
+    sel.appendChild(opt);
+  });
+  document.getElementById('upload-excel-file').value = '';
+  openModal('modal-upload-excel');
+}
+
+async function handleExcelUpload() {
+  const party = document.getElementById('upload-party-select').value;
+  const fileInput = document.getElementById('upload-excel-file');
+  const file = fileInput.files[0];
+  if (!party) { showToast('Select a party name', 'error'); return; }
+  if (!file) { showToast('Choose an Excel (.xlsx) file', 'error'); return; }
+  if (!file.name.endsWith('.xlsx')) { showToast('Only .xlsx files are supported', 'error'); return; }
+  const co = CONFIG.companies[uploadTargetCompanyIdx];
+  closeModal('modal-upload-excel');
+  const id = await uploadExcelAsGoogleSheet(co.name, party, file);
+  if (id) showToast(`${party} uploaded to Drive ✓`, 'success');
 }
 
 function addParty() {
