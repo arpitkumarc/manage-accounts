@@ -291,24 +291,30 @@ html, body {
 .report-period { font-size: 11px; opacity: 0.65; margin-top: 4px; }
 
 .report-table-wrap { overflow-x: auto; background: var(--white); border-radius: var(--radius); border: 1px solid var(--border); }
-.report-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 420px; }
+.report-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 440px; }
 .report-table th {
   background: var(--navy-pale);
   color: var(--navy);
   font-weight: 600;
-  padding: 10px 8px;
+  padding: 10px 6px;
   text-align: left;
-  font-size: 11px;
+  font-size: 10px;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
   border-bottom: 1px solid var(--border);
 }
+.report-table th:nth-child(1) { width: 52px; }
+.report-table th:nth-child(2) { min-width: 80px; }
+.report-table th:nth-child(3) { width: 52px; }
+.report-table th:nth-child(4) { width: 90px; }
+.report-table th:nth-child(5), .report-table th:nth-child(6) { width: 64px; }
 .report-table td {
-  padding: 9px 8px;
+  padding: 9px 6px;
   border-bottom: 0.5px solid var(--border);
   color: var(--text);
   vertical-align: top;
 }
+.report-table td:nth-child(4) { white-space: nowrap; font-size: 11px; }
 .report-table tr:last-child td { border-bottom: none; }
 .report-table .amount { text-align: right; font-variant-numeric: tabular-nums; }
 .report-table .total-row td {
@@ -671,16 +677,29 @@ html, body {
       <!-- VCH TYPE — tap chips -->
       <div class="form-group">
         <label class="form-label">Transaction Type</label>
-        <div class="type-chip-grid" id="type-chip-grid">
-          <button class="type-chip" data-type="Sale"        data-col="debit"  data-particulars="TROPHY"  onclick="selectTypeChip(this)">🏷️ Sale</button>
-          <button class="type-chip" data-type="Payment"     data-col="credit" data-particulars="PAYMENT" onclick="selectTypeChip(this)">💸 Payment</button>
-          <button class="type-chip" data-type="Receipt"     data-col="credit" data-particulars="RECEIPT" onclick="selectTypeChip(this)">🧾 Receipt</button>
-          <button class="type-chip" data-type="Purchase"    data-col="debit"  data-particulars="PURCHASE" onclick="selectTypeChip(this)">🛒 Purchase</button>
-          <button class="type-chip" data-type="Credit Note" data-col="credit" data-particulars="CREDIT NOTE" onclick="selectTypeChip(this)">📋 Credit Note</button>
-          <button class="type-chip" data-type="Debit Note"  data-col="debit"  data-particulars="DEBIT NOTE"  onclick="selectTypeChip(this)">📋 Debit Note</button>
-          <button class="type-chip" data-type="Journal"     data-col=""       data-particulars="JOURNAL" onclick="selectTypeChip(this)">📒 Journal</button>
+        <div class="type-chip-grid" id="type-chip-grid" style="grid-template-columns: repeat(3, 1fr);">
+          <button class="type-chip" data-type="Sale"    data-col="debit"  data-particulars="TROPHY"  onclick="selectTypeChip(this)">🏷️ Sale</button>
+          <button class="type-chip" data-type="Payment" data-col="credit" data-particulars="PAYMENT" onclick="selectTypeChip(this)">💸 Payment</button>
+          <button class="type-chip" data-type="Other"   data-col=""       data-particulars=""        onclick="selectTypeChip(this)">✏️ Other</button>
         </div>
         <input type="hidden" id="entry-vchtype-hidden" value="">
+      </div>
+
+      <!-- OTHER TYPE — shown only when "Other" chip is selected -->
+      <div class="form-group" id="other-type-section" style="display:none; background:var(--navy-pale); border-radius:var(--radius-sm); padding:12px; margin-top:-6px;">
+        <label class="form-label" style="margin-bottom:8px;">Custom Transaction Details</label>
+        <div class="form-group" style="margin-bottom:10px;">
+          <label class="form-label" style="font-size:11px;">Transaction Label</label>
+          <input type="text" class="form-input" id="other-type-label" placeholder="e.g. Receipt, Credit Note, Purchase…"
+            oninput="updateOtherTypeLabel(this.value)" style="background:var(--white);">
+        </div>
+        <label class="form-label" style="font-size:11px; margin-bottom:6px; display:block;">This transaction is a…</label>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+          <button id="other-debit-btn" class="type-chip" onclick="selectOtherCol('debit')"
+            style="border-color:#2d6a27; color:#2d6a27;">📦 Debit<br><span style="font-size:10px;font-weight:400;opacity:0.8;">Product Sold</span></button>
+          <button id="other-credit-btn" class="type-chip" onclick="selectOtherCol('credit')"
+            style="border-color:var(--navy); color:var(--navy);">💳 Credit<br><span style="font-size:10px;font-weight:400;opacity:0.8;">Pmt. Received</span></button>
+        </div>
       </div>
 
       <!-- PARTICULARS — custom dropdown -->
@@ -703,10 +722,15 @@ html, body {
       <!-- VCH NO -->
       <div class="form-group">
         <label class="form-label">Vch. No.</label>
-        <div style="display:flex;align-items:center;background:var(--bg);border:1.5px solid var(--border);border-radius:var(--radius-sm);padding-left:10px;">
-          <span id="vch-prefix" style="font-size:13px;font-weight:600;color:var(--text-mid);border-right:1px solid var(--border);padding-right:8px;white-space:nowrap;">TT/26-27/</span>
-          <input type="text" class="form-input" id="entry-vchno" style="border:none;background:transparent;" placeholder="001">
+        <div style="display:flex;align-items:center;background:var(--bg);border:1.5px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;">
+          <span id="vch-prefix" style="font-size:12px;font-weight:600;color:var(--text-mid);border-right:1px solid var(--border);padding:12px 8px;white-space:nowrap;flex-shrink:0;background:var(--navy-pale);">TT/26-27/</span>
+          <input type="text" inputmode="numeric" pattern="[0-9]*" class="form-input"
+            id="entry-vchno"
+            style="border:none;background:transparent;border-radius:0;flex:1;min-width:0;"
+            placeholder="001"
+            oninput="this.value=this.value.replace(/[^0-9]/g,'')">
         </div>
+        <div style="font-size:10px;color:var(--text-light);margin-top:4px;">Sequence number only (digits) — prefix is auto-set</div>
       </div>
 
       <!-- AMOUNT — single smart field that relabels based on type -->
@@ -879,6 +903,21 @@ const API_KEY = 'AIzaSyAHOlTTop0ZJ4sTcs4Nb4N7hKD9B0Biwko';
 const CLIENT_ID = '385370173939-qav1c2jg8erh1baahtp8642boe57o0gv.apps.googleusercontent.com';  // Replace with your Google API Key
 const SCOPES    = 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/spreadsheets';
 
+// ── SHARED DRIVE CONFIGURATION ───────────────────────
+// The admin shares their "Manage Accounts" folder (Editor access) with every user.
+// Paste the two IDs below once — the app will always read/write to the admin's folder,
+// regardless of which Google account the user connects with.
+//
+// How to get MANAGE_ACCOUNTS_FOLDER_ID:
+//   Open "Manage Accounts" in Google Drive → right-click → Get link
+//   The ID is the long string in the URL after /folders/
+//
+// How to get COMPANY_MASTER_SHEET_ID:
+//   Open the "Company Master" Google Sheet → copy the ID from the URL:
+//   https://docs.google.com/spreadsheets/d/THIS_PART_HERE/edit
+const MANAGE_ACCOUNTS_FOLDER_ID = '';  // ← PASTE YOUR "Manage Accounts" FOLDER ID HERE
+const COMPANY_MASTER_SHEET_ID   = '';  // ← PASTE YOUR "Company Master" SHEET ID HERE
+
 // Company + Party data (saved to localStorage so settings persist)
 const savedData = localStorage.getItem('accounts_config');
 let CONFIG = (savedData && savedData !== 'null') ? JSON.parse(savedData) : { companies: [] };
@@ -968,7 +1007,9 @@ function updateDriveStatus(connected) {
 // File: "Manage Accounts/Company Master" (Google Sheet)
 // Each tab = company name, Column A = party names
 
-let companyMasterFileId = null;
+// Resolved at runtime — seeded immediately from hardcoded constants if set
+let companyMasterFileId  = COMPANY_MASTER_SHEET_ID   || localStorage.getItem('company_master_file_id')  || null;
+let manageAccountsFolderId = MANAGE_ACCOUNTS_FOLDER_ID || localStorage.getItem('manage_accounts_folder_id') || null;
 
 async function driveAPI(method, path, body = null) {
   // Helper: raw fetch to Drive API v3 with access token
@@ -992,43 +1033,32 @@ async function sheetsAPI(method, path, body = null) {
   return r.json();
 }
 
-// Always resolves companyMasterFileId — finds folder+sheet or creates them
+// Always resolves companyMasterFileId.
+// If COMPANY_MASTER_SHEET_ID is hardcoded, returns it immediately.
+// Otherwise searches inside the resolved root folder.
 async function ensureCompanyMasterSheet() {
-  if (companyMasterFileId) return companyMasterFileId; // already cached
+  if (companyMasterFileId) return companyMasterFileId;
 
-  // 1. Find or create "Manage Accounts" folder
-  const folderSearch = await driveAPI('GET',
-    `files?q=${encodeURIComponent("name='Manage Accounts' and mimeType='application/vnd.google-apps.folder' and trashed=false")}&fields=files(id,name)`
-  );
-  let folderId = folderSearch.files?.[0]?.id;
-  if (!folderId) {
-    const newF = await driveAPI('POST', 'files', { name: 'Manage Accounts', mimeType: 'application/vnd.google-apps.folder' });
-    if (!newF.id) throw new Error('Could not create Manage Accounts folder');
-    folderId = newF.id;
-    console.log('Created Manage Accounts folder:', folderId);
-  } else {
-    console.log('Found Manage Accounts folder:', folderId);
-  }
+  const rootId = await getRootFolderId();
 
-  // 2. Find or create "Company Master" sheet inside it
   const sheetSearch = await driveAPI('GET',
-    `files?q=${encodeURIComponent(`name='Company Master' and '${folderId}' in parents and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`)}&fields=files(id,name)`
+    `files?q=${encodeURIComponent(`name='Company Master' and '${rootId}' in parents and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`)}&fields=files(id,name)`
   );
   if (sheetSearch.files?.length > 0) {
     companyMasterFileId = sheetSearch.files[0].id;
-    console.log('Found Company Master sheet:', companyMasterFileId);
+    localStorage.setItem('company_master_file_id', companyMasterFileId);
     return companyMasterFileId;
   }
 
-  // 3. Create the sheet
+  // Create it inside the root folder
   const newSheet = await driveAPI('POST', 'files', {
     name: 'Company Master',
     mimeType: 'application/vnd.google-apps.spreadsheet',
-    parents: [folderId]
+    parents: [rootId]
   });
   if (!newSheet.id) throw new Error('Could not create Company Master sheet');
   companyMasterFileId = newSheet.id;
-  console.log('Created Company Master sheet:', companyMasterFileId);
+  localStorage.setItem('company_master_file_id', companyMasterFileId);
   return companyMasterFileId;
 }
 
@@ -1150,22 +1180,41 @@ async function syncCompanyMasterToSheet() {
 
 // ── DRIVE FILE OPERATIONS ───────────────────────────
 
-async function getOrCreateFolder(name, parentId = null) {
-  let q = `name='${name}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
-  if (parentId) q += ` and '${parentId}' in parents`;
+// Returns the "Manage Accounts" root folder ID.
+// If MANAGE_ACCOUNTS_FOLDER_ID is hardcoded, uses it directly (points to admin's Drive).
+// Otherwise falls back to finding/creating the folder in the connected user's Drive.
+async function getRootFolderId() {
+  if (manageAccountsFolderId) return manageAccountsFolderId;
+  // Fallback: find or create in connected user's own Drive
+  const resp = await driveAPI('GET',
+    `files?q=${encodeURIComponent("name='Manage Accounts' and mimeType='application/vnd.google-apps.folder' and trashed=false")}&fields=files(id)`
+  );
+  if (resp.files?.length > 0) {
+    manageAccountsFolderId = resp.files[0].id;
+    localStorage.setItem('manage_accounts_folder_id', manageAccountsFolderId);
+    return manageAccountsFolderId;
+  }
+  const newF = await driveAPI('POST', 'files', { name: 'Manage Accounts', mimeType: 'application/vnd.google-apps.folder' });
+  if (!newF.id) throw new Error('Could not create Manage Accounts folder');
+  manageAccountsFolderId = newF.id;
+  localStorage.setItem('manage_accounts_folder_id', manageAccountsFolderId);
+  return manageAccountsFolderId;
+}
+
+// Returns a subfolder ID (company folder) inside the root. Creates it if missing.
+async function getOrCreateCompanyFolder(companyName) {
+  const rootId = await getRootFolderId();
+  let q = `name='${companyName}' and mimeType='application/vnd.google-apps.folder' and '${rootId}' in parents and trashed=false`;
   const resp = await driveAPI('GET', `files?q=${encodeURIComponent(q)}&fields=files(id)`);
   if (resp.files?.length > 0) return resp.files[0].id;
-  const body = { name, mimeType: 'application/vnd.google-apps.folder' };
-  if (parentId) body.parents = [parentId];
-  const newFolder = await driveAPI('POST', 'files', body);
+  const newFolder = await driveAPI('POST', 'files', { name: companyName, mimeType: 'application/vnd.google-apps.folder', parents: [rootId] });
   return newFolder.id;
 }
 
-// Returns Google Sheet file ID for a party, or null. Looks for Google Sheet named partyName.
+// Returns Google Sheet file ID for a party, or null.
 async function findPartySheet(companyName, partyName) {
   try {
-    const rootFolderId = await getOrCreateFolder('Manage Accounts');
-    const companyFolderId = await getOrCreateFolder(companyName, rootFolderId);
+    const companyFolderId = await getOrCreateCompanyFolder(companyName);
     const q = `name='${partyName}' and '${companyFolderId}' in parents and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`;
     const resp = await driveAPI('GET', `files?q=${encodeURIComponent(q)}&fields=files(id,name)`);
     return resp.files?.length > 0 ? resp.files[0].id : null;
@@ -1177,8 +1226,7 @@ async function findPartySheet(companyName, partyName) {
 
 // Returns company folder ID (creates if needed)
 async function getCompanyFolderId(companyName) {
-  const rootFolderId = await getOrCreateFolder('Manage Accounts');
-  return await getOrCreateFolder(companyName, rootFolderId);
+  return await getOrCreateCompanyFolder(companyName);
 }
 
 // Upload an Excel file and convert it to Google Sheets format in the company folder.
@@ -1625,6 +1673,9 @@ function goToAddEntry() {
   document.querySelectorAll('.type-chip').forEach(c =>
     c.classList.remove('selected-debit', 'selected-credit', 'selected-journal')
   );
+  document.getElementById('other-type-section').style.display = 'none';
+  document.getElementById('other-type-label').value = '';
+  otherTypeCol = '';
   currentAmountCol = '';
   updateAmountUI('', '');
 
@@ -1641,14 +1692,37 @@ function goToAddEntry() {
 // 'debit'  = Product Sold (col E)
 // 'credit' = Payment Received (col F)
 const TYPE_COLUMN_MAP = {
-  'Sale':        'debit',
-  'Purchase':    'debit',
-  'Debit Note':  'debit',
-  'Receipt':     'credit',
-  'Payment':     'credit',
-  'Credit Note': 'credit',
-  'Journal':     '' // both shown, user picks
+  'Sale':    'debit',
+  'Payment': 'credit',
 };
+
+// State for "Other" type
+let otherTypeCol = ''; // 'debit' or 'credit'
+
+function updateOtherTypeLabel(val) {
+  // keep hidden field updated with custom label as user types
+  const currentCol = otherTypeCol;
+  const label = val.trim() || 'Other';
+  document.getElementById('entry-vchtype-hidden').value = label;
+  // keep currentAmountCol in sync
+  currentAmountCol = currentCol;
+}
+
+function selectOtherCol(col) {
+  otherTypeCol = col;
+  currentAmountCol = col;
+  const debitBtn  = document.getElementById('other-debit-btn');
+  const creditBtn = document.getElementById('other-credit-btn');
+  debitBtn.classList.remove('selected-debit');
+  creditBtn.classList.remove('selected-credit');
+  if (col === 'debit')  debitBtn.classList.add('selected-debit');
+  else                  creditBtn.classList.add('selected-credit');
+
+  const label = document.getElementById('other-type-label').value.trim() || 'Other';
+  document.getElementById('entry-vchtype-hidden').value = label;
+  updateAmountUI(col, label);
+  setTimeout(() => document.getElementById('entry-amount').focus(), 50);
+}
 
 const PARTICULARS_OPTIONS = [
   { label: 'TROPHY',      icon: '🏆', sub: 'Trophy / product sale' },
@@ -1674,12 +1748,32 @@ function selectTypeChip(el) {
   const col  = el.dataset.col;
   const suggestedParticulars = el.dataset.particulars;
 
+  const otherSection = document.getElementById('other-type-section');
+
+  if (type === 'Other') {
+    el.classList.add('selected-journal');
+    otherSection.style.display = 'block';
+    // Reset other sub-fields
+    document.getElementById('other-type-label').value = '';
+    document.getElementById('other-debit-btn').classList.remove('selected-debit');
+    document.getElementById('other-credit-btn').classList.remove('selected-credit');
+    otherTypeCol = '';
+    currentAmountCol = '';
+    document.getElementById('entry-vchtype-hidden').value = '';
+    updateAmountUI('', '');
+    setTimeout(() => document.getElementById('other-type-label').focus(), 50);
+    return;
+  }
+
+  // Hide Other section for Sale / Payment
+  otherSection.style.display = 'none';
+  otherTypeCol = '';
+
   // Apply selected style
   if (col === 'debit')   el.classList.add('selected-debit');
   else if (col === 'credit') el.classList.add('selected-credit');
-  else el.classList.add('selected-journal');
 
-  // Store selected type in hidden field (reusing entry-vchtype concept)
+  // Store selected type
   document.getElementById('entry-vchtype-hidden').value = type;
   currentAmountCol = col;
 
@@ -1884,10 +1978,13 @@ function addToStagingList() {
   if (!date)        { showToast('Date is required', 'error'); return; }
   if (!particulars) { showToast('Particulars are required', 'error'); return; }
   if (!vchType)     { showToast('Select a Transaction Type', 'error'); return; }
+  // For "Other" type, ensure the user picked Debit or Credit
+  const col = TYPE_COLUMN_MAP[vchType] !== undefined ? TYPE_COLUMN_MAP[vchType] : currentAmountCol;
+  if (!col && !['Sale','Payment'].includes(vchType)) {
+    showToast('Select Debit or Credit for this transaction', 'error'); return;
+  }
   if (!amount)      { showToast('Enter an amount', 'error'); return; }
 
-  // Route amount to the correct column based on type
-  const col    = TYPE_COLUMN_MAP[vchType] || '';
   const debit  = col === 'debit'  ? amount : 0;
   const credit = col === 'credit' ? amount : 0;
 
@@ -2049,9 +2146,9 @@ async function generatePDF() {
     bodyStyles: { fontSize: 9, textColor: [26, 26, 46] },
     columnStyles: {
       0: { cellWidth: 22, halign: 'center' },
-      1: { cellWidth: 55 },
+      1: { cellWidth: 48 },
       2: { cellWidth: 25, halign: 'center' },
-      3: { cellWidth: 18, halign: 'center' },
+      3: { cellWidth: 26, halign: 'center' },
       4: { cellWidth: 28, halign: 'right' },
       5: { cellWidth: 28, halign: 'right' }
     },
@@ -2129,14 +2226,20 @@ function renderSettings() {
   });
   html += `<button class="settings-add-btn" onclick="openModal('modal-add-company')" style="margin-top:4px; width:100%">+ Add Company</button>`;
   html += `<div style="margin-top:20px; padding:14px; background:var(--white); border-radius:var(--radius); border:1px solid var(--border);">
-    <div style="font-size:12px; font-weight:600; color:var(--text-mid); margin-bottom:4px;">COMPANY MASTER (Google Drive)</div>
-    <div style="font-size:11px; color:var(--text-light); margin-bottom:10px;">
-      Stored in: <strong>Manage Accounts / Company Master</strong> (Google Sheet)<br>
-      Each tab = company · Column A = party names<br>
-      Party data files: <strong>Manage Accounts / Company Name / Party Name</strong> (Google Sheet)<br>
-      ${companyMasterFileId ? '✅ Sheet ID: <code style="font-size:10px;">' + companyMasterFileId + '</code>' : '⚠️ Sheet not yet located — click Reload to connect'}
+    <div style="font-size:12px; font-weight:600; color:var(--text-mid); margin-bottom:10px;">COMPANY MASTER (Google Drive)</div>
+    <div style="font-size:11px; padding:10px 12px; border-radius:var(--radius-sm); margin-bottom:10px; line-height:1.7;
+      ${MANAGE_ACCOUNTS_FOLDER_ID && COMPANY_MASTER_SHEET_ID
+        ? 'background:#e6f7ef; color:var(--success); border:1px solid #a3d9b8;'
+        : 'background:var(--gold-light); color:#7a5c1a; border:1px solid var(--gold);'}">
+      ${MANAGE_ACCOUNTS_FOLDER_ID && COMPANY_MASTER_SHEET_ID
+        ? `✅ <strong>Shared Drive configured</strong><br>All users read &amp; write to the admin's folder.`
+        : `⚠️ <strong>No shared folder configured</strong><br>Set MANAGE_ACCOUNTS_FOLDER_ID &amp; COMPANY_MASTER_SHEET_ID in the code.`}
     </div>
-    <button class="btn-primary" onclick="loadCompanyMasterFromSheet()" style="margin-top:0; margin-bottom:8px; font-size:13px;">🔄 Reload from Google Sheet</button>
+    <div style="font-size:11px; color:var(--text-light); margin-bottom:10px; line-height:1.6;">
+      Structure: <strong>Manage Accounts /</strong> [Company folder] / [Party sheet]<br>
+      Company Master: each tab = company, column A = parties
+    </div>
+    <button class="btn-primary" onclick="loadCompanyMasterFromSheet()" style="margin-top:0; margin-bottom:8px; font-size:13px;">🔄 Reload Companies from Sheet</button>
     <button class="btn-secondary" onclick="syncCompanyMasterToSheet()" style="margin-top:0; margin-bottom:8px;">⬆️ Push local data → Sheet</button>
     <button class="btn-secondary" onclick="handleAuthClick()" style="margin-top:0">🔗 Re-connect Google Drive</button>
   </div>`;
